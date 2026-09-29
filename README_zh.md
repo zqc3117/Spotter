@@ -1,5 +1,7 @@
 # 🤖 Spotter：让具身模型主导，让视觉语言模型为它反思
 
+<p align="center">如果我们的项目对你有帮助，欢迎在 GitHub 上点一个 star ⭐ 支持我们 🙏🙏</p>
+
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>

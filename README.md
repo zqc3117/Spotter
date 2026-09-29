@@ -1,5 +1,7 @@
 # 🤖 Spotter: Let the Embodied Model Lead, and the VLM Reflect for It
 
+<p align="center">If our project helps you, please give us a star ⭐ on GitHub to support us. 🙏🙏</p>
+
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>
