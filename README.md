@@ -16,22 +16,48 @@
 |---|---|---|---|---|
 | [arXiv](https://arxiv.org/abs/XXXX.XXXXX) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#1-installation) · [Quick start](#3-quick-start-one-pi05-episode) |
 
-## 🧩 Overview
+**Spotter** adds a lightweight intervention layer between a frozen embodied model (System 1) and a VLM (System 2).
+Instead of having the VLM plan every step, the embodied model leads and keeps executing, while a local screener
+watches in parallel and the VLM steps in only to confirm and repair an error. The VLM's job becomes much simpler,
+so the whole framework works with a **locally served, open-source Qwen and no privileged information**.
 
-Spotter adds a vision-language judge to long-horizon kitchen tasks in
-[RoboCasa](https://robocasa.ai). The robot policy stays in charge of the task; the judge
-periodically looks at camera frames and telemetry, and only when the policy fails does it
-step in with a short repair plan built from motion primitives. A lesson library
-(`recovery_explore/memory_bank`) carries recovery knowledge across episodes.
+## 🔥 Highlights
 
-- 🎯 **Closed-loop intervention**: the policy acts; the judge detects failures and proposes repairs.
-- 🔁 **Paired evaluation**: every episode can be run as a policy-only *control* arm and a judge-assisted *treatment* arm.
-- 🧪 **Two policy families**: Cosmos Policy and pi0.5, with the exact settings used in the paper.
+- **A lightweight intervention layer.** Like a person who keeps a little attention on a task and focuses only when
+  something looks wrong, Spotter lets execution flow continuously and brings in the VLM only on a confirmed error.
+- **A simpler job for the VLM.** The VLM no longer drives the robot. It only has to notice a failure, repair it with
+  a short primitive plan, and check the fix. A local Qwen with no access to the task's success signal is enough.
+- **Continuous execution, low overhead.** The embodied model never waits for the VLM on the routine path:
+  a successful episode takes only **13–16 s** longer than the policy alone.
 
-| Arm | Description |
-|---|---|
-| **Control** | Policy only; no judge calls. |
-| **Treatment** | Policy plus judge and optional interventions. |
+## 💡 Why Spotter
+
+Existing VLM-led robot agents are serial: the VLM plans a segment, the embodied model executes it, and the VLM
+decides what comes next. This forces a dilemma:
+
+- **Short segments** mean frequent VLM calls and high latency, even on easy tasks.
+- **Long segments** mean a deviation during execution cannot be caught in time, and later actions keep going wrong.
+
+Spotter removes this trade-off by supervising in parallel rather than in series.
+
+|  | VLM-led agents | Spotter |
+|---|---|---|
+| Who drives execution | VLM plans every step | Embodied model leads |
+| When the VLM is called | Before every step | Only on a confirmed error |
+| Embodied model waits for the VLM | Every step | Only during a repair |
+| Needs privileged information | Usually (e.g. the success signal) | No |
+| Works with a local Qwen | Only with privileged information | Yes |
+
+### 🎯 Works with a weaker model, without privileged information
+
+With the same local Qwen and no privileged information on RoboCasa (1,200 episodes), a representative VLM-led agent
+falls **below the policy alone** (Cosmos Policy 67.9 → 65.2, π0.5 64.3 → 60.5), while Spotter still improves it
+(→ 71.7 and 68.4).
+
+### ⚡ Almost no overhead when nothing goes wrong
+
+With Qwen, the judge is called **less than once** per successful episode on average, which adds only **13–16 s**
+over the policy alone and takes about **70% less time** than a VLM-led agent using the same Qwen.
 
 ## 1. Installation
 
@@ -128,6 +154,13 @@ Remove `SKIP_CONTROL=1` to run control and treatment on the same episode. Keep
 `STEP_BUDGET_SCALE` identical for both arms.
 
 ## 4. Full-scale runs
+
+Every episode can be run in two arms on the same scene, instruction and step budget:
+
+| Arm | Description |
+|---|---|
+| **Control** | Policy only; no judge calls. |
+| **Treatment** | Policy plus judge and optional interventions. |
 
 The paper evaluates on `sall500`: 24 RoboCasa tasks × episode index 0–49 at seed 500
 (1200 episodes, the same list for both policy families). The lists are in
