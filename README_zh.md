@@ -1,6 +1,6 @@
 # 🤖 Spotter：让具身模型主导，让视觉语言模型为它反思
 
-<p align="center">如果我们的项目对你有帮助，欢迎在 GitHub 上点一个 star ⭐ 支持我们 🙏🙏</p>
+<p align="center">如果我们的项目对你有帮助，欢迎在 GitHub 上点一个 star ⭐ 支持我们</p>
 
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
@@ -61,7 +61,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 |---|---|---|
 | pi0.5 | [DAVIAN-Robotics/pi05-robocasa-H50](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) | `FAMILY_OVERRIDE=pi05` |
 | Cosmos Policy | [nvidia/Cosmos-Policy-RoboCasa-Predict2-2B](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | `FAMILY_OVERRIDE=cosmos` |
-| Qwen 判别器 | Qwen3.8-27B-FP8，用 vLLM 本地部署 | 判别器和筛子（screener） |
+| Qwen 判别器 | [Qwen/Qwen3.8-27B-FP8](https://huggingface.co/Qwen/Qwen3.8-27B-FP8)（[ModelScope](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8)），用 vLLM 本地部署 | 判别器和筛子（screener） |
 
 另外还需要：上游的 Cosmos Policy / RoboCasa 代码（Python 3.10）、pi0.5 / `lerobot`（Python 3.12）、vLLM，以及支持 EGL 的 GPU。本仓库不包含上游策略代码和模型权重；Cosmos 的策略服务（`python -m rpc.server`）来自上游 Cosmos Policy 仓库。
 

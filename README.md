@@ -1,6 +1,6 @@
 # 🤖 Spotter: Let the Embodied Model Lead, and the VLM Reflect for It
 
-<p align="center">If our project helps you, please give us a star ⭐ on GitHub to support us. 🙏🙏</p>
+<p align="center">If our project helps you, please give us a star ⭐ on GitHub to support us.</p>
 
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
@@ -67,7 +67,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 |---|---|---|
 | pi0.5 | [DAVIAN-Robotics/pi05-robocasa-H50](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) | `FAMILY_OVERRIDE=pi05` |
 | Cosmos Policy | [nvidia/Cosmos-Policy-RoboCasa-Predict2-2B](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | `FAMILY_OVERRIDE=cosmos` |
-| Qwen judge | Qwen3.8-27B-FP8, served locally with vLLM | judge and screener |
+| Qwen judge | [Qwen/Qwen3.8-27B-FP8](https://huggingface.co/Qwen/Qwen3.8-27B-FP8), served locally with vLLM | judge and screener |
 
 You also need the upstream Cosmos Policy / RoboCasa tree (Python 3.10), pi0.5 / `lerobot`
 (Python 3.12), vLLM, and an EGL-capable GPU. This repository does not ship upstream policy
