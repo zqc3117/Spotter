@@ -130,6 +130,8 @@ def main():
             if key.startswith("NOTE") and val:
                 val = "Commentary: " + val
             body = body.replace("{" + key + "}", val)
+        # the released bank stores picture paths relative to the bank root; make them absolute
+        body = re.sub(r"\[\[IMAGE:(?!/)([^\]]+)\]\]", lambda m: f"[[IMAGE:{BANK}/{m.group(1)}]]", body)
         if a.images_as == "paths":
             body = re.sub(r"\[\[IMAGE:([^\]]+)\]\]", r"(example picture, open it: \1)", body)
         same = "the same task" if t == a.task else f"a related task ({t})"

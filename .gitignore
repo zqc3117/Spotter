@@ -7,6 +7,9 @@ recovery_explore/runs_*/
 recovery_explore_runs/
 recovery_explore/frames/
 recovery_explore/fewshot_bank/
+logs/
+.venvs/
+checkpoints/
 recovery_explore/memory_bank*/*.lock
 
 # secrets -- never commit

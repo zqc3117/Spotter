@@ -11,6 +11,7 @@
 #   --lanes N        parallel lanes (default 1); lane N uses simulation port 8450+N
 #   --sim-gpus N     GPUs the simulation services are spread over, GPU 0..N-1 (default: all visible)
 #   --arm A          both (control + treatment on each episode, default) | treat | ctrl
+#   --one-shot       add one worked example to the judge (needs the example bank, see README)
 #   --run NAME       run name (default <family>_<set>); rerunning a name resumes it
 #   --dry-run        print the commands instead of running them
 # Every paper setting can still be overridden through the environment (see README, "Configuration").
@@ -21,7 +22,7 @@ cd "$REPO"
 if [ -f env/env.sh ]; then set +u; source env/env.sh; set -u; fi
 
 die() { echo "spotter.sh: $*" >&2; exit 1; }
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 policy_port() { case "$1" in cosmos) echo 8800 ;; pi05) echo 8900 ;; *) die "family must be pi05 or cosmos, got '$1'" ;; esac; }
 
@@ -79,10 +80,10 @@ cmd_run() {
   local fam=${1:-}; [ -n "$fam" ] || die "usage: spotter.sh run <pi05|cosmos> [SET] [options]"; shift
   local set=smoke
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then set=$1; shift; fi
-  local lanes=1 simgpus="" arm=both run="" dry=0
+  local lanes=1 simgpus="" arm=both run="" dry=0 oneshot=0
   while [ $# -gt 0 ]; do case "$1" in
     --lanes) lanes=$2; shift 2 ;; --sim-gpus) simgpus=$2; shift 2 ;; --arm) arm=$2; shift 2 ;;
-    --run) run=$2; shift 2 ;; --dry-run) dry=1; shift ;; -h|--help) usage ;; *) die "unknown option $1" ;; esac; done
+    --run) run=$2; shift 2 ;; --one-shot) oneshot=1; shift ;; --dry-run) dry=1; shift ;; -h|--help) usage ;; *) die "unknown option $1" ;; esac; done
 
   local port; port=$(policy_port "$fam")
   local queue_src
@@ -106,9 +107,14 @@ cmd_run() {
     QWEN_PORTS="${QWEN_PORTS:-8301,8302,8303,8304}" QWEN_KEEP_TURNS="${QWEN_KEEP_TURNS:-20}"
     STEP_BUDGET_SCALE="${STEP_BUDGET_SCALE:-1.8}" WINDOW="${WINDOW:-$window}" TEL_CHUNKS="${TEL_CHUNKS:-$tel}"
     COMPACT_AT="${COMPACT_AT:-110000}" MAX_INTERVENTIONS="${MAX_INTERVENTIONS:-8}"
-    ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT="${FEWSHOT:-0}" LEARN=0
+    ALLOW_RESET="${ALLOW_RESET:-0}" MAX_RESETS="${MAX_RESETS:-0}" LEARN="${LEARN:-0}"
+    FEWSHOT="$([ $oneshot = 1 ] && echo 1 || echo "${FEWSHOT:-0}")" FEWSHOT_MAX_IMAGES="${FEWSHOT_MAX_IMAGES:-12}"
     CTRL_ONLY=$ctrl_only SKIP_CONTROL=$skip_ctrl
   )
+
+  if [ $oneshot = 1 ] && [ $dry = 0 ] && [ ! -d "${FEWSHOT_BANK:-recovery_explore/fewshot_bank}" ]; then
+    die "--one-shot needs the example bank; download it first (README: Model Preparation)"
+  fi
 
   local qdir="recovery_explore/runs_$run" out="recovery_explore/runs_${run}_$fam"
   local n

@@ -5,7 +5,7 @@ components listed below, which remain under their original licenses.
 
 ## RPent (Apache License 2.0)
 
-Portions of the following files are copied or adapted from RPent,
+Portions of the following files are copied or adapted from [RPent](https://github.com/RLinf/RPent),
 Copyright 2026 The RPent Authors, licensed under the Apache License,
 Version 2.0. A copy of the license is in `LICENSES/Apache-2.0.txt`. The
 original copyright headers are kept in each file, and each file states which
