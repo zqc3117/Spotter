@@ -11,9 +11,9 @@ If flag is true the window goes to Opus; if false the VLA keeps going.
 import base64, json, re, time, urllib.request, itertools, threading
 
 # ---- endpoints -------------------------------------------------------------
-# Four replicas, one per GPU. Use 127.0.0.1 on the same host, the cluster IP from another host.
+# Four replicas by default, one per GPU; QWEN_PORTS overrides the list. Use 127.0.0.1 on the same host, the cluster IP from another host.
 HOST = "127.0.0.1"          # overridden by the caller across machines (screen_window.py --host / $SCREENER_HOST)
-PORTS = [8301, 8302, 8303, 8304]
+PORTS = [int(p) for p in __import__("os").environ.get("QWEN_PORTS", "8301,8302,8303,8304").split(",")]  # one port per replica
 MODEL = "qwen38"
 THRESHOLD = 3               # aggressive setting; the conservative setting uses the v5 prompt + threshold 3
 EMPTY_MM = 12.0             # aperture below this = empty grasp

@@ -75,7 +75,16 @@ source env/env.sh
 
 ### 部署 Qwen 判别器
 
-判别器和筛子通过 OpenAI 兼容接口访问 vLLM 服务，地址由 `QWEN_HOST`（默认 `127.0.0.1`）和 `QWEN_PORTS`（默认 `8301,8302,8303,8304`）指定。每张卡起一个服务：
+判别器和筛子共用一个本地部署的 Qwen。每张卡起一个 vLLM 副本（端口 8301、8302……），终端保持打开：
+
+```bash
+bash spotter.sh judge --gpus 0,1,2,3
+```
+
+卡少时少写几张（如 `--gpus 0`），并在运行前 `export QWEN_PORTS=8301`。
+
+<details>
+<summary><code>spotter.sh judge</code> 实际执行的命令</summary>
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 vllm serve "$QWEN_MODEL" \
@@ -84,8 +93,7 @@ CUDA_VISIBLE_DEVICES=0 vllm serve "$QWEN_MODEL" \
   --limit-mm-per-prompt '{"image":60,"video":2}' \
   --gpu-memory-utilization 0.70 --seed 0
 ```
-
-卡够的话可以在 8302–8304 端口再起几个副本，否则把 `QWEN_PORTS` 设成实际使用的端口。
+</details>
 
 ## 2. 流程
 
@@ -103,45 +111,33 @@ Cosmos 每个策略块（chunk）执行 16 步，pi0.5 执行 25 步。设置 `S
 
 ## 3. 快速开始：跑一集 pi0.5
 
-先执行 `source env/env.sh`。
-
-### 启动策略服务
+三条命令，各开一个终端（先 `source env/env.sh`）：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 \
-OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 TORCHINDUCTOR_COMPILE_THREADS=4 \
-  "$PI05_PYTHON" -m rpc.policy_server_pi05 \
-    --host 0.0.0.0 --port 8900 --checkpoint "$PI05_CHECKPOINT"
-curl -s http://127.0.0.1:8900/health
+bash spotter.sh judge --gpus 0      # 1. Qwen 判别器 + 筛子（见上文）
+bash spotter.sh policy pi05 --gpu 1 # 2. 具身模型
+bash spotter.sh run pi05            # 3. 跑一集：同一场景下对照组和 Spotter 各跑一次
 ```
 
-### 启动仿真服务
-
-```bash
-MAX_RESETS=0 STEP_BUDGET_SCALE=1.8 SVC_HOST=0.0.0.0 \
-  bash recovery_explore/launch_svc.sh 0 8450 http://127.0.0.1:8900 pi05 rounds
-python3 recovery_explore/cli/harness.py --endpoint http://127.0.0.1:8450 meta
-```
-
-### 建队列并运行 driver
-
-```bash
-mkdir -p recovery_explore/runs_smoke
-printf 'PnPCabToCounter:195:0\n' > recovery_explore/runs_smoke/episodes_pi05.txt
-: > recovery_explore/runs_smoke/episodes_cosmos.txt
-
-ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
-SIM_HOST=127.0.0.1 SIM_MANAGED=0 STEP_BUDGET_SCALE=1.8 \
-POLICY_URL=http://127.0.0.1:8900 ENGINE=qwen MODEL=qwen38 \
-SCREEN=1 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 \
-MAX_INTERVENTIONS=8 INTERVENE_BUDGET=30 PLAN_ROUNDS=6 \
-ALLOW_RESET=0 MAX_RESETS=0 CTRL_ONLY=0 SKIP_CONTROL=1 FEWSHOT=0 LEARN=0 \
-  bash recovery_explore/judge_driver_v7.sh 0
-```
-
-去掉 `SKIP_CONTROL=1` 就会在同一个 episode 上依次跑对照组和实验组。两组的 `STEP_BUDGET_SCALE` 必须相同。
+`run` 会先检查策略服务和 Qwen 是否就绪，自动启动仿真服务，结束后打印成功率。加 `--dry-run` 可以只看要执行的命令而不真正运行。
 
 ## 4. 全量实验
+
+论文在 `sall500` 上评测：24 个 RoboCasa 任务 × episode 编号 0–49，seed 固定为 500，共 1200 集，两种策略使用同一份列表。列表放在 [`recovery_explore/episode_sets/`](recovery_explore/episode_sets/)；`s500q96` 是 96 集的子集，适合快速验证。
+
+```bash
+bash spotter.sh policy cosmos --gpu 4
+bash spotter.sh run cosmos sall500 --lanes 8     # 8 集并行
+bash spotter.sh summary                          # 随时查看成功率
+```
+
+| 选项 | 含义 |
+|---|---|
+| `SET` | `smoke`（1 集，默认）、`s500q96`、`sall500`，或每行一个 `任务:种子:编号` 的文件 |
+| `--lanes N` | 并行跑的集数；lane `N` 使用仿真端口 `8450+N` |
+| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
+| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
+| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
 
 同一个 episode 可以在相同的场景、指令和步数预算下分别跑两组：
 
@@ -150,33 +146,26 @@ ALLOW_RESET=0 MAX_RESETS=0 CTRL_ONLY=0 SKIP_CONTROL=1 FEWSHOT=0 LEARN=0 \
 | **对照组（Control）** | 只有策略，不调用判别器。 |
 | **实验组（Treatment）** | 策略加判别器，可按需干预。 |
 
-论文在 `sall500` 上评测：24 个 RoboCasa 任务 × episode 编号 0–49，seed 固定为 500，共 1200 集，两种策略使用同一份列表。列表放在 [`recovery_explore/episode_sets/`](recovery_explore/episode_sets/)，每行一个 `任务:种子:编号`；`s500q96.txt` 是 96 集的子集，适合快速验证。
+论文设置（Table 3 的 full context）都已内置；在终端里 export [参数配置](#5-参数配置)中的任何变量都可以覆盖默认值。
 
-多开几个 **lane** 共用同一个 run 名即可并行。lane `N` 使用端口 `8450+N` 上的仿真服务；同一个 run 的所有 lane 从共享队列 `recovery_explore/runs_<RUN>/episodes_<策略>.txt` 里领取 episode，每集只会被领取一次。结果数达到 `TARGET` 后 driver 自动结束。
+<details>
+<summary>直接调用 driver</summary>
+
+`spotter.sh run` 会为每个 lane 启动一个 driver。上面跑一集 pi0.5 的命令等价于：
 
 ```bash
-RUN=paper_cosmos; FAMILY=cosmos; LANES=4
-mkdir -p recovery_explore/runs_$RUN
-cp recovery_explore/episode_sets/sall500.txt recovery_explore/runs_$RUN/episodes_$FAMILY.txt
-
-for N in $(seq 0 $((LANES-1))); do
-  # 每个 lane 一个仿真服务（GPU = N % 显卡数）
-  MAX_RESETS=0 STEP_BUDGET_SCALE=1.8 SVC_HOST=0.0.0.0 \
-    bash recovery_explore/launch_svc.sh $((N % 4)) $((8450+N)) http://127.0.0.1:8800 $FAMILY rounds &
-done
-
-for N in $(seq 0 $((LANES-1))); do
-  ON_POD=1 RUN=$RUN TARGET=1200 NGPU=4 FAMILY_OVERRIDE=$FAMILY \
-  SIM_HOST=127.0.0.1 SIM_MANAGED=0 STEP_BUDGET_SCALE=1.8 \
-  POLICY_URL=http://127.0.0.1:8800 ENGINE=qwen MODEL=qwen38 \
-  SCREEN=1 WINDOW=2 TEL_CHUNKS=40 COMPACT_AT=110000 QWEN_KEEP_TURNS=20 \
-  MAX_INTERVENTIONS=8 ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 \
-    bash recovery_explore/judge_driver_v7.sh $N > recovery_explore/runs_$RUN/lane$N.out 2>&1 &
-done
-wait
+mkdir -p recovery_explore/runs_smoke
+printf 'PnPCabToCounter:195:0\n' > recovery_explore/runs_smoke/episodes_pi05.txt
+ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
+SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL=http://127.0.0.1:8900 \
+ENGINE=qwen MODEL=qwen38 SCREEN=1 QWEN_KEEP_TURNS=20 \
+STEP_BUDGET_SCALE=1.8 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 MAX_INTERVENTIONS=8 \
+ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
+  bash recovery_explore/judge_driver_v7.sh 0
 ```
 
-跑 pi0.5 时改用 `FAMILY=pi05`、pi0.5 的策略服务（端口从 8900 起）、`WINDOW=1` 和 `TEL_CHUNKS=10`（见下表）。只跑对照组时设 `CTRL_ONLY=1`。
+driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 run 的所有 lane 从同一个队列领取 episode，结果数达到 `TARGET` 后各 lane 自动结束。
+</details>
 
 ## 5. 参数配置
 
@@ -221,21 +210,17 @@ lane<N>/driver.log        各 lane 的进度日志
 lane<N>/jd-.../w<窗口>/    给判别器看的画面
 ```
 
-快速汇总：
+汇总所有 run，或按名称只看一个：
 
 ```bash
-python3 - recovery_explore/runs_<RUN>_<策略>/results.jsonl <<'EOF'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-for arm in ("control_success", "treatment_success"):
-    vals = [bool(r[arm]) for r in rows if r.get(arm) is not None]
-    if vals: print(f"{arm}: {sum(vals)}/{len(vals)} = {100*sum(vals)/len(vals):.1f}%")
-EOF
+bash spotter.sh summary            # 所有 run
+bash spotter.sh summary cosmos_sall500
 ```
 
 ## 7. 目录结构
 
 ```text
+spotter.sh            统一入口：部署 Qwen / 策略服务、运行、汇总结果
 recovery_explore/     判别 driver、RoboCasa 服务、判别用命令行工具、简报、经验库、评测集
 rpc/                  pi0.5 策略服务、RPC 协议、RoboCasa rollout 工具
 cf_bench/             快照、重放和渲染工具

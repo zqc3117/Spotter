@@ -85,8 +85,17 @@ and [`env/requirements-pi05.txt`](env/requirements-pi05.txt).
 
 ### Serve the Qwen judge
 
-The judge and screener talk to OpenAI-compatible vLLM servers on `QWEN_HOST` (default
-`127.0.0.1`) and `QWEN_PORTS` (default `8301,8302,8303,8304`). One server per GPU:
+The judge and the screener share one locally served Qwen. Start one vLLM replica per GPU
+(ports 8301, 8302, ...) and keep the terminal open:
+
+```bash
+bash spotter.sh judge --gpus 0,1,2,3
+```
+
+With fewer GPUs, pass fewer ids (e.g. `--gpus 0`) and `export QWEN_PORTS=8301` before running.
+
+<details>
+<summary>What <code>spotter.sh judge</code> runs</summary>
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 vllm serve "$QWEN_MODEL" \
@@ -95,9 +104,7 @@ CUDA_VISIBLE_DEVICES=0 vllm serve "$QWEN_MODEL" \
   --limit-mm-per-prompt '{"image":60,"video":2}' \
   --gpu-memory-utilization 0.70 --seed 0
 ```
-
-Start more replicas on ports 8302–8304 if you have the GPUs, or set `QWEN_PORTS` to the ports
-you actually use.
+</details>
 
 ## 2. Pipeline
 
@@ -116,46 +123,36 @@ checks every window and only escalates suspicious windows to the full judge.
 
 ## 3. Quick start: one pi0.5 episode
 
-Run after `source env/env.sh`.
-
-### Start the policy server
+Three commands, each in its own terminal (after `source env/env.sh`):
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 \
-OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 TORCHINDUCTOR_COMPILE_THREADS=4 \
-  "$PI05_PYTHON" -m rpc.policy_server_pi05 \
-    --host 0.0.0.0 --port 8900 --checkpoint "$PI05_CHECKPOINT"
-curl -s http://127.0.0.1:8900/health
+bash spotter.sh judge --gpus 0      # 1. Qwen judge + screener (see above)
+bash spotter.sh policy pi05 --gpu 1 # 2. the embodied model
+bash spotter.sh run pi05            # 3. one episode, control and Spotter on the same scene
 ```
 
-### Start the simulation service
-
-```bash
-MAX_RESETS=0 STEP_BUDGET_SCALE=1.8 SVC_HOST=0.0.0.0 \
-  bash recovery_explore/launch_svc.sh 0 8450 http://127.0.0.1:8900 pi05 rounds
-python3 recovery_explore/cli/harness.py --endpoint http://127.0.0.1:8450 meta
-```
-
-### Create a queue and run the driver
-
-```bash
-mkdir -p recovery_explore/runs_smoke
-printf 'PnPCabToCounter:195:0\n' > recovery_explore/runs_smoke/episodes_pi05.txt
-: > recovery_explore/runs_smoke/episodes_cosmos.txt
-
-ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
-SIM_HOST=127.0.0.1 SIM_MANAGED=0 STEP_BUDGET_SCALE=1.8 \
-POLICY_URL=http://127.0.0.1:8900 ENGINE=qwen MODEL=qwen38 \
-SCREEN=1 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 \
-MAX_INTERVENTIONS=8 INTERVENE_BUDGET=30 PLAN_ROUNDS=6 \
-ALLOW_RESET=0 MAX_RESETS=0 CTRL_ONLY=0 SKIP_CONTROL=1 FEWSHOT=0 LEARN=0 \
-  bash recovery_explore/judge_driver_v7.sh 0
-```
-
-Remove `SKIP_CONTROL=1` to run control and treatment on the same episode. Keep
-`STEP_BUDGET_SCALE` identical for both arms.
+`run` checks that the policy and Qwen are up, starts the simulation service itself, and prints the
+success rates when it finishes. Add `--dry-run` to see the exact commands without running them.
 
 ## 4. Full-scale runs
+
+The paper evaluates on `sall500`: 24 RoboCasa tasks × episode index 0–49 at seed 500
+(1,200 episodes, the same list for both policy families). The lists are in
+[`recovery_explore/episode_sets/`](recovery_explore/episode_sets/); `s500q96` is a 96-episode subset for quick checks.
+
+```bash
+bash spotter.sh policy cosmos --gpu 4
+bash spotter.sh run cosmos sall500 --lanes 8     # 8 episodes in parallel
+bash spotter.sh summary                          # success rates, any time
+```
+
+| Option | Meaning |
+|---|---|
+| `SET` | `smoke` (1 episode, default), `s500q96`, `sall500`, or a file with one `TASK:SEED:EPISODE` per line |
+| `--lanes N` | episodes run in parallel; lane `N` uses simulation port `8450+N` |
+| `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
+| `--arm` | `both` (control + Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
+| `--run NAME` | run name (default `<family>_<set>`); rerunning the same name resumes it |
 
 Every episode can be run in two arms on the same scene, instruction and step budget:
 
@@ -164,40 +161,28 @@ Every episode can be run in two arms on the same scene, instruction and step bud
 | **Control** | Policy only; no judge calls. |
 | **Treatment** | Policy plus judge and optional interventions. |
 
-The paper evaluates on `sall500`: 24 RoboCasa tasks × episode index 0–49 at seed 500
-(1200 episodes, the same list for both policy families). The lists are in
-[`recovery_explore/episode_sets/`](recovery_explore/episode_sets/), one `TASK:SEED:EPISODE`
-per line; `s500q96.txt` is a 96-episode subset for quick checks.
+All paper settings are built in (Table 3, "full context"); any variable from
+[Configuration](#5-configuration) exported in your shell overrides them.
 
-Scale out by running several **lanes** on the same run name. Lane `N` talks to the simulation
-service on port `8450+N`, and all lanes of a run pull episodes from the shared queue
-`recovery_explore/runs_<RUN>/episodes_<family>.txt` (each episode is claimed exactly once).
-The driver stops once the run has `TARGET` results.
+<details>
+<summary>Running the driver directly</summary>
+
+`spotter.sh run` launches one driver per lane. The single-episode pi0.5 run above is equivalent to:
 
 ```bash
-RUN=paper_cosmos; FAMILY=cosmos; LANES=4
-mkdir -p recovery_explore/runs_$RUN
-cp recovery_explore/episode_sets/sall500.txt recovery_explore/runs_$RUN/episodes_$FAMILY.txt
-
-for N in $(seq 0 $((LANES-1))); do
-  # one simulation service per lane (GPU = N % number of GPUs)
-  MAX_RESETS=0 STEP_BUDGET_SCALE=1.8 SVC_HOST=0.0.0.0 \
-    bash recovery_explore/launch_svc.sh $((N % 4)) $((8450+N)) http://127.0.0.1:8800 $FAMILY rounds &
-done
-
-for N in $(seq 0 $((LANES-1))); do
-  ON_POD=1 RUN=$RUN TARGET=1200 NGPU=4 FAMILY_OVERRIDE=$FAMILY \
-  SIM_HOST=127.0.0.1 SIM_MANAGED=0 STEP_BUDGET_SCALE=1.8 \
-  POLICY_URL=http://127.0.0.1:8800 ENGINE=qwen MODEL=qwen38 \
-  SCREEN=1 WINDOW=2 TEL_CHUNKS=40 COMPACT_AT=110000 QWEN_KEEP_TURNS=20 \
-  MAX_INTERVENTIONS=8 ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 \
-    bash recovery_explore/judge_driver_v7.sh $N > recovery_explore/runs_$RUN/lane$N.out 2>&1 &
-done
-wait
+mkdir -p recovery_explore/runs_smoke
+printf 'PnPCabToCounter:195:0\n' > recovery_explore/runs_smoke/episodes_pi05.txt
+ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
+SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL=http://127.0.0.1:8900 \
+ENGINE=qwen MODEL=qwen38 SCREEN=1 QWEN_KEEP_TURNS=20 \
+STEP_BUDGET_SCALE=1.8 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 MAX_INTERVENTIONS=8 \
+ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
+  bash recovery_explore/judge_driver_v7.sh 0
 ```
 
-For pi0.5 use `FAMILY=pi05`, the pi0.5 policy server (port base 8900), `WINDOW=1` and
-`TEL_CHUNKS=10` (see the table below). To run the control arm only, set `CTRL_ONLY=1`.
+The driver starts and restarts the simulation service on port `8450+lane` by itself. All lanes of a run
+claim episodes from the same queue, and each lane stops once the run has `TARGET` results.
+</details>
 
 ## 5. Configuration
 
@@ -244,21 +229,17 @@ lane<N>/driver.log        per-lane progress
 lane<N>/jd-.../w<window>/ frames shown to the judge
 ```
 
-A quick summary:
+Summarize every run, or one run by name:
 
 ```bash
-python3 - recovery_explore/runs_<RUN>_<family>/results.jsonl <<'EOF'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-for arm in ("control_success", "treatment_success"):
-    vals = [bool(r[arm]) for r in rows if r.get(arm) is not None]
-    if vals: print(f"{arm}: {sum(vals)}/{len(vals)} = {100*sum(vals)/len(vals):.1f}%")
-EOF
+bash spotter.sh summary            # all runs
+bash spotter.sh summary cosmos_sall500
 ```
 
 ## 7. Repository layout
 
 ```text
+spotter.sh            one entry point: serve Qwen / the policy, run episodes, summarize
 recovery_explore/     judge driver, RoboCasa service, judge CLIs, briefs, lesson library, episode sets
 rpc/                  pi0.5 policy server, RPC protocol, RoboCasa rollout helpers
 cf_bench/             snapshot, replay and rendering helpers
