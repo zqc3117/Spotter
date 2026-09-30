@@ -197,6 +197,9 @@
   .bank .lesson { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 12px; background: var(--surface); padding: 14px 16px; box-shadow: var(--shadow); }
   .bank .lesson .eyebrow { margin-bottom: 6px; }
   .bank .lesson p { margin: 0; font-size: 15px; color: var(--ink); }
+  .bank .lesson p + p { margin-top: 6px; }
+  .bank .lesson a { color: var(--ink); }
+  .bank .lesson a:hover { color: var(--accent-ink); }
   .bank .lesson + .lesson { margin-top: 12px; }
   .bank .lesson q { font-style: italic; color: var(--muted); }
 
@@ -766,9 +769,10 @@
           </div>
         </div>
         <div>
-          <div class="lesson"><span class="eyebrow">Lesson · grasping (paraphrased)</span><p><q>Grasp a long bottle in the middle, not at an end; end grasps slip when the arm turns.</q></p></div>
-          <div class="lesson"><span class="eyebrow">Lesson · after a miss (paraphrased)</span><p><q>If the gripper closed on nothing, return the arm to its pose before the reach and shift toward the object before trying again.</q></p></div>
-          <div class="lesson"><span class="eyebrow">Worked example · 1-shot</span><p>Frames of the flagged chunks, the judge's verdict (<span class="mk no">✗</span> missed the handle), the primitives it composed for the repair, and the check that confirmed the fix.</p></div>
+          <div class="lesson"><span class="eyebrow">Lesson · perception · verified</span><p><a href="https://github.com/zqc3117/Spotter/blob/main/recovery_explore/memory_bank/global/closed-gripper-is-not-a-grasp.md" target="_blank" rel="noopener"><strong>A closed gripper is not a grasp; only the object leaving its support proves one</strong></a></p><p><q>Closing on nothing, pinching an edge, and toppling the object then closing all look identical in the gripper signal alone.</q></p></div>
+          <div class="lesson"><span class="eyebrow">Lesson · strategy · probable</span><p><a href="https://github.com/zqc3117/Spotter/blob/main/recovery_explore/memory_bank/global/fix-at-the-miss-not-where-the-arm-ended-up.md" target="_blank" rel="noopener"><strong>Repair the moment of the missed grasp, not the retreated pose the policy left you in</strong></a></p><p><q>The error to correct is two or three centimetres at the moment the fingers shut. Every centimetre of travel afterwards is unrelated to that error.</q></p></div>
+          <div class="lesson"><span class="eyebrow">Lesson · strategy · probable</span><p><a href="https://github.com/zqc3117/Spotter/blob/main/recovery_explore/memory_bank/global/three-strikes-then-hand-back.md" target="_blank" rel="noopener"><strong>Three failed repairs on one trajectory means stop and let the policy run out</strong></a></p><p><q>Each intervention leaves the arm somewhere the policy did not choose. The cost compounds while the chance of rescue does not.</q></p></div>
+          <p class="table-note" style="margin-top:12px">Three of the 77 lessons in <a href="https://github.com/zqc3117/Spotter/blob/main/recovery_explore/memory_bank/global/" target="_blank" rel="noopener">memory_bank/global</a>, quoted verbatim. Each file records when it applies, the evidence episodes, a confidence level and what would falsify it.</p>
         </div>
       </div>
     </div>
