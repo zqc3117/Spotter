@@ -464,7 +464,6 @@
     <li><a href="#latency">Latency</a></li>
     <li><a href="#real-robot">Real robot</a></li>
     <li><a href="#examples">Example bank</a></li>
-    <li><a href="#quickstart">Quick start</a></li>
     <li><a href="#citation">Citation</a></li>
   </ul>
 </nav>
@@ -476,7 +475,6 @@
       <a class="opt" href="#why">Why</a>
       <a href="#method">Method</a>
       <a href="#experiments">Results</a>
-      <a class="opt" href="#quickstart">Quick start</a>
       <a href="#citation">Citation</a>
     </div>
   </div>
@@ -775,37 +773,6 @@
           <p class="table-note" style="margin-top:12px">Three of the 77 lessons in <a href="https://github.com/zqc3117/Spotter/blob/main/recovery_explore/memory_bank/global/" target="_blank" rel="noopener">memory_bank/global</a>, quoted verbatim. Each file records when it applies, the evidence episodes, a confidence level and what would falsify it.</p>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section id="quickstart">
-    <div class="wrap">
-      <span class="eyebrow">Run it</span>
-      <h2>Quick start</h2>
-      <p class="lead">One entry point, <span class="c">spotter.sh</span>, serves the models, runs episodes and summarizes results. Full setup, checkpoints and the paper settings are in the <a href="https://github.com/zqc3117/Spotter#readme">README</a>.</p>
-      <ol class="cards">
-        <li class="card">
-          <span class="n">01</span>
-          <h3>Serve the VLM and the policy</h3>
-          <p>One Qwen replica per GPU for the screener and judge, then π₀.₅ or Cosmos Policy on its own GPU.</p>
-          <div class="code"><button class="copy-btn" type="button" data-copy="qs1">Copy</button><pre id="qs1">source env/env.sh
-bash spotter.sh judge --gpus 0,1,2,3
-bash spotter.sh policy pi05 --gpu 4</pre></div>
-        </li>
-        <li class="card">
-          <span class="n">02</span>
-          <h3>Run one episode</h3>
-          <p>The driver starts the RoboCasa service itself and runs the control and Spotter arms on the same scene.</p>
-          <div class="code"><button class="copy-btn" type="button" data-copy="qs2">Copy</button><pre id="qs2">bash spotter.sh run pi05</pre></div>
-        </li>
-        <li class="card">
-          <span class="n">03</span>
-          <h3>Reproduce the paper</h3>
-          <p>The 1,200-episode evaluation set, eight lanes in parallel, then a summary of both arms.</p>
-          <div class="code"><button class="copy-btn" type="button" data-copy="qs3">Copy</button><pre id="qs3">bash spotter.sh run pi05 sall500 --lanes 8
-bash spotter.sh summary</pre></div>
-        </li>
-      </ol>
     </div>
   </section>
 
