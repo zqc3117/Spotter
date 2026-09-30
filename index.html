@@ -297,10 +297,10 @@
     html { scroll-behavior: auto; }
   }
 
-  /* ---------- full-viewport hero (warm paper, same in both colour schemes) ---------- */
+  /* ---------- full-viewport hero (neutral black, same in both colour schemes) ---------- */
   .hero {
-    --h-bg: #f6f3ec; --h-ink: #1c1a17; --h-muted: #5c5850; --h-faint: #8a857b;
-    --h-line: rgba(28, 26, 23, 0.14); --h-accent: #2a78d6; --h-accent-2: #1f68c0; --h-gain: #1a7a50;
+    --h-bg: #0b0b0c; --h-ink: #f2f5fb; --h-muted: #b3bdd1; --h-faint: #7f8aa3;
+    --h-line: rgba(255, 255, 255, 0.14); --h-accent: #5aa2f0; --h-accent-2: #3cc4de; --h-gain: #4cc28a;
     position: relative; isolation: isolate; overflow: hidden;
     min-height: 100vh; min-height: 100svh;
     display: flex; flex-direction: column; justify-content: center;
@@ -310,8 +310,8 @@
   .hero::before, .hero::after {
     content: ""; position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: -1;
   }
-  .hero::before { width: 60vw; height: 60vw; max-width: 760px; max-height: 760px; left: -18vw; top: -20vh; background: rgba(42, 120, 214, 0.16); }
-  .hero::after  { width: 50vw; height: 50vw; max-width: 640px; max-height: 640px; right: -12vw; bottom: -24vh; background: rgba(60, 196, 222, 0.12); }
+  .hero::before { width: 60vw; height: 60vw; max-width: 760px; max-height: 760px; left: -18vw; top: -20vh; background: rgba(42, 120, 214, 0.14); }
+  .hero::after  { width: 50vw; height: 50vw; max-width: 640px; max-height: 640px; right: -12vw; bottom: -24vh; background: rgba(60, 196, 222, 0.08); }
   .hero-grid {
     width: min(1380px, 100% - 48px); margin: 0 auto;
     display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center;
@@ -321,33 +321,33 @@
   .hero-media { position: relative; min-width: 0; }
   .hero-media video {
     display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px;
-    background: #1c1a17; box-shadow: 0 1px 2px rgba(28, 26, 23, 0.08), 0 20px 50px rgba(28, 26, 23, 0.16);
+    background: #000; border: 1px solid var(--h-line); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   }
   .hero-media .clip-tag {
     position: absolute; left: 14px; top: 14px; padding: 5px 10px; border-radius: 6px;
-    background: rgba(28, 26, 23, 0.62); color: #fff; font: 500 11px/1.4 var(--label); letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(0, 0, 0, 0.55); color: #fff; border: 1px solid rgba(255, 255, 255, 0.18); font: 500 11px/1.4 var(--label); letter-spacing: 0.08em; text-transform: uppercase;
   }
   .hero-anim { display: block; width: 100%; height: auto; overflow: visible; }
   .hero-anim text { font-family: var(--mono); }
   .hero-anim .lbl { fill: var(--h-muted); font-size: 15px; font-weight: 500; }
-  .hero-anim .lbl.em { fill: #1f56b8; }
-  .hero-anim .lbl.fast { fill: #12594d; }
-  .hero-anim .lbl.front { fill: #7a4f00; }
+  .hero-anim .lbl.em { fill: #a9c7f6; }
+  .hero-anim .lbl.fast { fill: #8fd8c6; }
+  .hero-anim .lbl.front { fill: #f2c66e; }
   .hero-anim .chunk rect { rx: 8; }
   .hero-anim .chunk text { font-size: 17px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
-  .hero-anim .em rect { fill: #dfe9fb; stroke: #9dbbea; stroke-width: 1.2; }
-  .hero-anim .em text { fill: #1f56b8; }
-  .hero-anim .fast rect { fill: #cfeae3; stroke: #86c4b3; stroke-width: 1.2; }
-  .hero-anim .fast text { fill: #12594d; }
-  .hero-anim .front rect { fill: #f8e3b3; stroke: #d9b45f; stroke-width: 1.2; }
-  .hero-anim .front text { fill: #7a4f00; }
-  .hero-anim .bad text { fill: #b4541a; }
+  .hero-anim .em rect { fill: #1c2c4c; stroke: #3b6fc4; stroke-width: 1.2; }
+  .hero-anim .em text { fill: #cfe0fb; }
+  .hero-anim .fast rect { fill: #16352f; stroke: #2f8a72; stroke-width: 1.2; }
+  .hero-anim .fast text { fill: #a8e6d4; }
+  .hero-anim .front rect { fill: #3a2c10; stroke: #b98a2c; stroke-width: 1.2; }
+  .hero-anim .front text { fill: #f6d78d; }
+  .hero-anim .bad text { fill: #f6b28d; }
   .hero-anim .link { fill: none; stroke: #2f8a72; stroke-width: 1.6; opacity: 0.7; }
-  .hero-anim .link.warn { stroke: #c08a2c; }
+  .hero-anim .link.warn { stroke: #b98a2c; }
   .hero-anim .axis { stroke: var(--h-line); stroke-width: 1; }
   .hero-anim .axis-lbl { fill: var(--h-faint); font-size: 12px; font-style: italic; }
-  .hero-anim .zone { fill: rgba(242, 198, 110, 0.14); stroke: rgba(180, 130, 40, 0.5); stroke-dasharray: 5 5; rx: 12; }
-  .hero-anim .zone-lbl { fill: #7a4f00; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hero-anim .zone { fill: rgba(242, 198, 110, 0.06); stroke: rgba(242, 198, 110, 0.35); stroke-dasharray: 5 5; rx: 12; }
+  .hero-anim .zone-lbl { fill: #f2c66e; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
   .hero-anim .seq { animation: seq 0.6s ease-out both; animation-delay: calc(var(--i, 0) * 0.5s); }
   @keyframes seq {
     from { opacity: 0; transform: translateY(6px); }
@@ -382,15 +382,15 @@
   .quick-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
   .resource-link {
     display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px;
-    border: 1px solid var(--h-line); background: #ffffff; color: var(--h-ink); box-shadow: 0 1px 2px rgba(28, 26, 23, 0.05);
+    border: 1px solid var(--h-line); background: rgba(255, 255, 255, 0.04); color: var(--h-ink);
     font: 600 14px/1 var(--mono); transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
   }
-  .resource-link:hover { text-decoration: none; border-color: var(--h-accent); background: #eef4fd; transform: translateY(-1px); }
+  .resource-link:hover { text-decoration: none; border-color: var(--h-accent); background: rgba(90, 162, 240, 0.12); transform: translateY(-1px); }
   .resource-link svg { width: 15px; height: 15px; fill: currentColor; }
   .resource-link small { font-weight: 400; color: var(--h-muted); }
   .tldr {
     margin: 28px 0 0; max-width: 62ch; padding: 16px 20px 18px;
-    border-left: 3px solid var(--h-accent); background: #ffffff; box-shadow: 0 1px 2px rgba(28, 26, 23, 0.05), 0 8px 24px rgba(28, 26, 23, 0.06);
+    border-left: 3px solid var(--h-accent); background: rgba(255, 255, 255, 0.04);
     font-size: 17px; line-height: 1.6; color: var(--h-ink);
   }
   .resource-link .stars { margin-left: 2px; padding-left: 10px; border-left: 1px solid var(--h-line); font-weight: 500; color: var(--h-muted); }
@@ -542,7 +542,7 @@
         </g>
         <defs>
           <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#c08a2c"/>
+            <path d="M0 0 L10 5 L0 10 z" fill="#b98a2c"/>
           </marker>
         </defs>
       </svg>
