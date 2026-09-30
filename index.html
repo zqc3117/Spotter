@@ -97,10 +97,11 @@
     border-bottom: 1px solid var(--line);
   }
   .nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
-  .brand { font: 700 20px/1 var(--display); color: var(--ink); letter-spacing: -0.01em; }
+  .brand { font: 600 23px/1 var(--serif); color: var(--ink); letter-spacing: -0.02em; }
+  .brand span { color: var(--accent); }
   .brand:hover { text-decoration: none; }
   .nav-links { display: flex; gap: 22px; margin-left: auto; }
-  .nav-links a { color: var(--muted); font-size: 16.5px; font-weight: 500; }
+  .nav-links a { color: var(--muted); font: 500 15px/1 var(--label); letter-spacing: 0.01em; }
   .nav-links a:hover { color: var(--ink); text-decoration: none; }
   .nav-links a.active { color: var(--accent-ink); }
 
@@ -491,7 +492,7 @@
 
 <nav class="nav" aria-label="Page">
   <div class="wrap">
-    <a class="brand" href="#top">Spotter</a>
+    <a class="brand" href="#top">Spotter<span aria-hidden="true">.</span></a>
     <div class="nav-links">
       <a class="opt" href="#why">Why</a>
       <a href="#method">Method</a>
