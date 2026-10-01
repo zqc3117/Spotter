@@ -33,10 +33,10 @@
 ## 🎬 演示
 
 <p align="center">
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="真机演示：把蓝杯叠到粉杯上"></a>
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.gif" width="100%" alt="真机演示：把蓝杯叠到粉杯上"></a>
 </p>
 
-<p align="center">真机（Franka Research 3）把蓝杯叠到粉杯上，真实时间。<br>点击画面，到<a href="https://zqc3117.github.io/Spotter/#demos">项目主页</a>观看视频。</p>
+<p align="center">真机（Franka Research 3）把蓝杯叠到粉杯上。动图按 2 倍速播放，并缩短了判别器思考的时间；画面里的计时为真实时间。<br><a href="https://zqc3117.github.io/Spotter/#demos">在项目主页观看完整视频</a>。</p>
 
 ## 🔥 核心优势
 

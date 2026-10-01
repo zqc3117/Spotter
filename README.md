@@ -34,10 +34,10 @@ so the whole framework works with a **locally served, open-source Qwen and no pr
 ## 🎬 Demos
 
 <p align="center">
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="Real robot demo: stack the blue cup onto the pink cup"></a>
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.gif" width="100%" alt="Real robot demo: stack the blue cup onto the pink cup"></a>
 </p>
 
-<p align="center">Real robot (Franka Research 3), stacking the blue cup onto the pink cup, in real time.<br>Click the frame to watch the video on the <a href="https://zqc3117.github.io/Spotter/#demos">project page</a>.</p>
+<p align="center">Real robot (Franka Research 3), stacking the blue cup onto the pink cup. Shown at 2×, with the judge's thinking time shortened; the on-screen clock is real time.<br><a href="https://zqc3117.github.io/Spotter/#demos">Watch the full video on the project page</a>.</p>
 
 ## 🔥 Highlights
 
