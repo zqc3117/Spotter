@@ -337,6 +337,8 @@ bash spotter.sh summary pi05_sall500
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
 
+Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `2000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 
 | 变量 | 默认值 | 作用 |

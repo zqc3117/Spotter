@@ -355,6 +355,8 @@ bash spotter.sh summary pi05_sall500
 | `QWEN_KEEP_TURNS` | `20` | Recent judge turns kept in full. |
 | `FEWSHOT` | `0` | `1` adds one worked example (`--one-shot`); needs the example bank. |
 
+Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `2000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
+
 How the judge is paced has its own switches, all off or conservative by default:
 
 | Variable | Default | Effect |

@@ -118,6 +118,10 @@ MAX_RESETS=${MAX_RESETS:-5}
 SCREEN=${SCREEN:-0}; SCREENER_HOST=${SCREENER_HOST:-127.0.0.1}
 # Round three switched to opus 5: round-two interventions could not tell "which moment needs fixing", and judging was too conservative.
 JUDGE_DEADLINE=600; ACT_DEADLINE=1500
+# Qwen thinking: the screener and the window verdict never think; the repair turns of an intervention
+# (exec rounds, push, replan, repeat) think when QWEN_REPAIR_THINK=1, up to QWEN_THINK_BUDGET (2000) tokens
+# (cli/qwen_call.py). QWEN_REPAIR_THINK=0 is the paper's setting: no call thinks.
+QWEN_REPAIR_THINK=${QWEN_REPAIR_THINK:-1}
 # Judge backend: claude = claude code cli, codex = codex cli.
 # They differ in three ways, all smoothed over in engine_turn:
 #   1. codex does not Read image paths by itself; the overview image must be passed explicitly with -i
@@ -459,6 +463,7 @@ claude_turn(){ # $1=prompt file $2=output json $3=deadline $4=optional image $5=
       ( cd "$CD" && run_with_deadline "$3" /dev/null \
           python3 "$P/recovery_explore/cli/qwen_call.py" \
             --prompt "$1" --out "$2" --model "$MODEL" --effort "$REASONING" \
+            --think "${QWEN_TURN_THINK:-$QWEN_REPAIR_THINK}" \
             --timeout "$3" ${SID:+--resume "$SID"} ${4:+--image "$4"} ); rc=$?
     elif [ "$ENGINE" = "codex" ]; then
       local txt="${2%.json}.out" ev="${2%.json}.jsonl"
@@ -1558,7 +1563,7 @@ PEOF
           echo "which mat), whether one hand or both must act on the same object, and in what order things happen."; } >> "$CD/p_w$W.txt"
       fi
     fi
-    claude_turn "$CD/p_w$W.txt" "$CD/judge_w$W.json" $JUDGE_DEADLINE "$MONT" "Read"
+    QWEN_TURN_THINK=0 claude_turn "$CD/p_w$W.txt" "$CD/judge_w$W.json" $JUDGE_DEADLINE "$MONT" "Read"
     if [ "$ASYNC" != 0 ] && [ -f "$CD/async/success" ]; then
       TS=True; log "  window $W policy finished the task in the background, cancelling in-flight calls, episode over"; break
     fi
@@ -2213,7 +2218,7 @@ Schema, copy it exactly (the validator rejects anything else):
 Do not edit anything under memory_bank/global/ — drafts go to the inbox and a human
 decides whether they are published.
 PEOF
-    claude_turn "$CD/p_learn.txt" "$CD/learn.json" 600 "" "Read,Write"
+    QWEN_TURN_THINK=0 claude_turn "$CD/p_learn.txt" "$CD/learn.json" 600 "" "Read,Write"
     if [ "$ENGINE" = "api" ] || [ "$ENGINE" = "qwen" ]; then
       python3 - "$CD/learn.json" "$INBOX" << 'PY' >> $OUT/lane$LANE/driver.log 2>&1
 import json, re, sys, os

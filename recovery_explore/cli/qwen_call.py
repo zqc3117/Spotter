@@ -45,6 +45,8 @@ def main() -> None:
     ap.add_argument("--effort", default="medium")   # compatibility flag; ignored by the local model
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--retries", type=int, default=2)
+    ap.add_argument("--think", choices=["0", "1"], default="0",
+                    help="1: Qwen3 thinks before it answers (the driver asks this for the repair turns only)")
     a = ap.parse_args()
 
     prompt = open(a.prompt, encoding="utf-8", errors="replace").read()
@@ -74,8 +76,16 @@ def main() -> None:
         tpath = os.path.join(os.path.dirname(os.path.abspath(a.out)), f"qwen_session_{int(time.time() * 1000)}.json")
         msgs = []
     msgs.append({"role": "user", "content": content})
-    payload = {"model": a.model, "messages": _trim(msgs), "max_tokens": 3000, "temperature": 0.2,
-               "chat_template_kwargs": {"enable_thinking": False}}
+    # --think 1: the first request stops at the thinking budget (QWEN_THINK_BUDGET); if the thinking has
+    # not closed by then, a closing line and </think> are appended as the assistant's own text and the
+    # model continues with the answer (vLLM continue_final_message), which gets its own 3000 tokens.
+    thinking = a.think == "1"
+    think_budget = int(os.environ.get("QWEN_THINK_BUDGET") or 2000)
+    answer_tokens = 3000
+    payload = {"model": a.model, "messages": _trim(msgs), "max_tokens": think_budget if thinking else answer_tokens,
+               "temperature": 0.2, "chat_template_kwargs": {"enable_thinking": thinking}}
+    BUDGET_CLOSE = ("\n\nConsidering the limited time by the user, I have to give the answer based on the "
+                    "thinking directly now.\n</think>\n\n")
 
     rec = {"result": "", "session_id": tpath, "duration_ms": 0}
     t0 = time.time(); last = None
@@ -91,7 +101,36 @@ def main() -> None:
                 data = json.loads(resp.read().decode())
             ch = (data.get("choices") or [{}])[0].get("message") or {}
             text = ch.get("content") or ""
+            finish = (data.get("choices") or [{}])[0].get("finish_reason")
+            cut_think = "</think>" not in text
+            if thinking and (finish == "length" or (cut_think and "<think>" in text)):
+                # out of budget inside the thinking: close it and continue with the answer;
+                # out of tokens after the thinking closed (the answer itself was cut): continue the answer
+                partial = text + BUDGET_CLOSE if cut_think else text
+                cont = dict(payload, messages=list(payload["messages"]) + [{"role": "assistant", "content": partial}],
+                            max_tokens=answer_tokens, add_generation_prompt=False, continue_final_message=True)
+                req2 = urllib.request.Request(f"http://{HOST}:{port}/v1/chat/completions",
+                                              data=json.dumps(cont).encode(),
+                                              headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req2, timeout=a.timeout) as resp2:
+                    data2 = json.loads(resp2.read().decode())
+                text = partial + (((data2.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                rec["think_budget_hit"] = cut_think
+                data.setdefault("usage", {})["completion_tokens"] = (
+                    int((data.get("usage") or {}).get("completion_tokens") or 0)
+                    + int((data2.get("usage") or {}).get("completion_tokens") or 0))
+            # Qwen3's chat template opens <think> in the prompt, so the reply carries the thinking with only
+            # the closing tag (or both tags). The thinking goes to the record, never into the answer or the
+            # transcript (Qwen3 wants earlier turns without it).
+            think = [str(ch["reasoning_content"])] if ch.get("reasoning_content") else []
+            m = re.search(r"</think>", text) if thinking else None
+            if m:
+                think.append(re.sub(r"^\s*<think>", "", text[:m.start()]).strip())
+                text = text[m.end():]
+            think += re.findall(r"<think>(.*?)</think>", text, flags=re.S)
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+            if think:
+                rec["thinking"] = "\n".join(t for t in think if t)[:8000]
             rec["result"] = text
             u = data.get("usage") or {}
             rec["usage"] = {"input_tokens": int(u.get("prompt_tokens") or 0), "cache_creation_input_tokens": 0,
