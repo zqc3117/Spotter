@@ -298,6 +298,19 @@
     html { scroll-behavior: auto; }
   }
 
+  /* demos */
+  .demos-wrap { max-width: 1180px; }
+  .demo { margin: 26px 0 0; }
+  .demo-media { position: relative; border-radius: 14px; overflow: hidden; background: #0b0f1a; border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .demo-media video { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; background: #0b0f1a; }
+  .demo-tag { position: absolute; left: 12px; top: 12px; padding: 4px 9px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: #fff;
+    font: 500 11px/1.4 var(--label); letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none; }
+  .demo figcaption { max-width: none; }
+  .demo figcaption b { color: var(--ink); font-weight: 600; }
+  .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .demo-note { margin-top: 14px; font-size: 13.5px; color: var(--faint); }
+  @media (max-width: 820px) { .demo-grid { grid-template-columns: 1fr; gap: 0; } }
+
   /* ---------- full-viewport hero (neutral black, same in both colour schemes) ---------- */
   .hero {
     --h-bg: #0b0b0c; --h-ink: #f2f5fb; --h-muted: #b3bdd1; --h-faint: #7f8aa3;
@@ -495,6 +508,7 @@
   <hr>
   <ul>
     <li><a href="#glance">At a glance</a></li>
+    <li><a href="#demos">Demos</a></li>
     <li><a href="#why">Why embodied-led</a></li>
     <li><a href="#method">Method</a></li>
     <li><a href="#experiments">Results</a></li>
@@ -509,6 +523,7 @@
   <div class="wrap">
     <a class="brand" href="#top">Spotter<span aria-hidden="true">.</span></a>
     <div class="nav-links">
+      <a href="#demos">Demos</a>
       <a href="#why">Why</a>
       <a href="#method">Method</a>
       <a href="#experiments">Results</a>
@@ -628,6 +643,37 @@
 </ul>
 
 <main>
+  <section id="demos">
+    <div class="wrap demos-wrap">
+      <span class="eyebrow">See it work</span>
+      <h2>Demos</h2>
+      <p class="lead">Each recording shows the cameras the system sees, what the screener and the judge said at that moment, and a timeline of who was busy: the policy, the screener, or the judge.</p>
+      <figure class="demo demo-main">
+        <div class="demo-media">
+          <video controls muted playsinline preload="none" poster="assets/demo/real-stack-cups.webp" data-autoplay aria-label="Real robot: stack the blue cup onto the pink cup"><source src="assets/demo/real-stack-cups.mp4" type="video/mp4"></video>
+          <span class="demo-tag">Real robot · 1×</span>
+        </div>
+        <figcaption><b>Franka Research 3 · “Stack the blue cup onto the pink cup.”</b> The hand stalls 2 cm above the cup with one finger over the rim. The screener flags it, the judge sees that closing here would tip the cup, nudges the hand sideways and hands back; the policy finishes the stack. Real time, 57 s.</figcaption>
+      </figure>
+      <div class="demo-grid">
+        <figure class="demo">
+          <div class="demo-media">
+            <video controls muted playsinline preload="none" poster="assets/demo/sim-sink-to-counter.webp" data-autoplay data-rate="2" aria-label="RoboCasa: pick the sweet potato from the sink and place it on the plate"><source src="assets/demo/sim-sink-to-counter.mp4" type="video/mp4"></video>
+            <span class="demo-tag">RoboCasa · 2×</span>
+          </div>
+          <figcaption><b>Sink → counter.</b> The gripper closes on nothing; the judge retreats the arm to the pre-grasp point, nudges it over the sweet potato and hands back, and the policy places it on the plate.</figcaption>
+        </figure>
+        <figure class="demo">
+          <div class="demo-media">
+            <video controls muted playsinline preload="none" poster="assets/demo/sim-cabinet-to-counter.webp" data-autoplay data-rate="2" aria-label="RoboCasa: pick the mug from the cabinet and place it on the counter"><source src="assets/demo/sim-cabinet-to-counter.mp4" type="video/mp4"></video>
+            <span class="demo-tag">RoboCasa · 2×</span>
+          </div>
+          <figcaption><b>Cabinet → counter.</b> The policy misses the mug on the shelf; the judge backs off, lines the hand up with the handle and hands back, and the policy carries the mug to the counter.</figcaption>
+        </figure>
+      </div>
+      <p class="demo-note">RoboCasa clips run on robot time (simulator rendering and video saving removed) and play at 2×; use the player to slow them down.</p>
+    </div>
+  </section>
   <section id="why">
     <div class="wrap">
       <span class="eyebrow">Why embodied-led</span>
@@ -939,6 +985,30 @@
           bgv.currentTime = 0;
           var p = bgv.play(); if (p && p.catch) p.catch(function () {});
         }, 5000);
+      });
+    }
+
+    // demos: play (muted) while on screen, pause when scrolled away; RoboCasa clips default to 2x
+    var demoVids = document.querySelectorAll('video[data-autoplay]');
+    var demoReduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    Array.prototype.forEach.call(demoVids, function (v) {
+      var r = parseFloat(v.getAttribute('data-rate') || '1');
+      v.defaultPlaybackRate = r; v.playbackRate = r;
+      v.addEventListener('loadedmetadata', function () { v.playbackRate = v.defaultPlaybackRate; });
+    });
+    if ('IntersectionObserver' in window && !demoReduce.matches) {
+      var demoIO = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          var v = e.target;
+          if (e.isIntersecting && e.intersectionRatio >= 0.5) {
+            if (v.paused && !v.dataset.userPaused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+          } else if (!v.paused) { v.dataset.autoPaused = '1'; v.pause(); }
+        });
+      }, { threshold: [0, 0.5] });
+      Array.prototype.forEach.call(demoVids, function (v) {
+        v.addEventListener('pause', function () { if (!v.dataset.autoPaused && !v.ended) v.dataset.userPaused = '1'; delete v.dataset.autoPaused; });
+        v.addEventListener('play', function () { delete v.dataset.userPaused; });
+        demoIO.observe(v);
       });
     }
 
