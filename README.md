@@ -27,6 +27,10 @@ Instead of having the VLM plan every step, the embodied model leads and keeps ex
 watches in parallel and the VLM steps in only to confirm and repair an error. The VLM's job becomes much simpler,
 so the whole framework works with a **locally served, open-source Qwen and no privileged information**.
 
+<p align="center">
+  <img src="assets/teaser.png" width="100%" alt="Spotter overview: the embodied model leads chunk by chunk, a faster VLM screens each chunk, and a frontier VLM judges and repairs only confirmed errors; with success rates and time per episode.">
+</p>
+
 ## 🔥 Highlights
 
 - **A lightweight intervention layer.** Like a person who keeps a little attention on a task and focuses only when
