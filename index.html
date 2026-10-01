@@ -658,20 +658,20 @@
       <div class="demo-grid">
         <figure class="demo">
           <div class="demo-media">
-            <video controls muted playsinline preload="none" poster="assets/demo/sim-sink-to-counter.webp" data-autoplay data-rate="2" aria-label="RoboCasa: pick the sweet potato from the sink and place it on the plate"><source src="assets/demo/sim-sink-to-counter.mp4" type="video/mp4"></video>
-            <span class="demo-tag">RoboCasa · 2×</span>
+            <video controls muted playsinline preload="none" poster="assets/demo/sim-sink-to-counter.webp" data-autoplay aria-label="RoboCasa: pick the sweet potato from the sink and place it on the plate"><source src="assets/demo/sim-sink-to-counter.mp4" type="video/mp4"></video>
+            <span class="demo-tag">RoboCasa · 1.5×</span>
           </div>
           <figcaption><b>Sink → counter.</b> The gripper closes on nothing; the judge retreats the arm to the pre-grasp point, nudges it over the sweet potato and hands back, and the policy places it on the plate.</figcaption>
         </figure>
         <figure class="demo">
           <div class="demo-media">
-            <video controls muted playsinline preload="none" poster="assets/demo/sim-cabinet-to-counter.webp" data-autoplay data-rate="2" aria-label="RoboCasa: pick the mug from the cabinet and place it on the counter"><source src="assets/demo/sim-cabinet-to-counter.mp4" type="video/mp4"></video>
-            <span class="demo-tag">RoboCasa · 2×</span>
+            <video controls muted playsinline preload="none" poster="assets/demo/sim-cabinet-to-counter.webp" data-autoplay aria-label="RoboCasa: pick the mug from the cabinet and place it on the counter"><source src="assets/demo/sim-cabinet-to-counter.mp4" type="video/mp4"></video>
+            <span class="demo-tag">RoboCasa · 1.5×</span>
           </div>
           <figcaption><b>Cabinet → counter.</b> The policy misses the mug on the shelf; the judge backs off, lines the hand up with the handle and hands back, and the policy carries the mug to the counter.</figcaption>
         </figure>
       </div>
-      <p class="demo-note">RoboCasa clips run on robot time (simulator rendering and video saving removed) and play at 2×; use the player to slow them down.</p>
+      <p class="demo-note">RoboCasa clips are cut for viewing: the policy's inference pauses between chunks are removed, each judge or screener turn is shortened to a few seconds, and motion plays at 1.5×. The on-screen clock is robot time, so it jumps where the cuts are.</p>
     </div>
   </section>
   <section id="why">
