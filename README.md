@@ -22,14 +22,27 @@
 |---|---|---|---|---|
 | [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#-environment-setup) · [Quick start](#-evaluation-with-released-checkpoints) |
 
+<p align="center">
+  <img src="assets/teaser.png" width="100%" alt="Spotter overview: the embodied model leads chunk by chunk, a faster VLM screens each chunk, and a frontier VLM judges and repairs only confirmed errors; with success rates and time per episode.">
+</p>
+
 **Spotter** adds a lightweight intervention layer between a frozen embodied model (System 1) and a VLM (System 2).
 Instead of having the VLM plan every step, the embodied model leads and keeps executing, while a local screener
 watches in parallel and the VLM steps in only to confirm and repair an error. The VLM's job becomes much simpler,
 so the whole framework works with a **locally served, open-source Qwen and no privileged information**.
 
+## 🎬 Demos
+
 <p align="center">
-  <img src="assets/teaser.png" width="100%" alt="Spotter overview: the embodied model leads chunk by chunk, a faster VLM screens each chunk, and a frontier VLM judges and repairs only confirmed errors; with success rates and time per episode.">
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="Real robot demo: stack the blue cup onto the pink cup"></a>
 </p>
+
+<p align="center">
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-sink-to-counter.jpg" width="49%" alt="RoboCasa demo: sink to counter"></a>
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-cabinet-to-counter.jpg" width="49%" alt="RoboCasa demo: cabinet to counter"></a>
+</p>
+
+<p align="center"><b>Top:</b> real robot (Franka Research 3), stacking the blue cup onto the pink cup, in real time. <b>Bottom:</b> RoboCasa, sink → counter and cabinet → counter.<br>Click any frame to watch the videos on the <a href="https://zqc3117.github.io/Spotter/#demos">project page</a>.</p>
 
 ## 🔥 Highlights
 

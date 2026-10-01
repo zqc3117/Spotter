@@ -22,13 +22,26 @@
 |---|---|---|---|---|
 | [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
 
+<p align="center">
+  <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
+</p>
+
 **Spotter** 在冻结的具身模型（System 1）和 VLM（System 2）之间加入了一个轻量的介入机制。
 它不让 VLM 规划每一步，而是让具身模型主导并持续执行；本地筛子并行关注执行进展，只有确认出错时，VLM 才介入确认并纠正。
 交给 VLM 的任务因此简单得多，整个框架**用本地部署的开源 Qwen、不借助任何特权信息**就能运行。
 
+## 🎬 演示
+
 <p align="center">
-  <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="真机演示：把蓝杯叠到粉杯上"></a>
 </p>
+
+<p align="center">
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-sink-to-counter.jpg" width="49%" alt="RoboCasa 演示：水槽到台面"></a>
+  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-cabinet-to-counter.jpg" width="49%" alt="RoboCasa 演示：柜子到台面"></a>
+</p>
+
+<p align="center"><b>上：</b>真机（Franka Research 3）把蓝杯叠到粉杯上，真实时间。<b>下：</b>RoboCasa 仿真，水槽 → 台面、柜子 → 台面。<br>点击任意画面，到<a href="https://zqc3117.github.io/Spotter/#demos">项目主页</a>观看视频。</p>
 
 ## 🔥 核心优势
 
