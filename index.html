@@ -308,32 +308,33 @@
     background: var(--h-bg); color: var(--h-ink);
     padding: 0; text-align: left; mask-image: none; -webkit-mask-image: none;
   }
-  .hero::before, .hero::after {
-    content: ""; position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: -1;
-  }
-  .hero::before { width: 60vw; height: 60vw; max-width: 760px; max-height: 760px; left: -18vw; top: -20vh; background: rgba(42, 120, 214, 0.14); }
-  .hero::after  { width: 50vw; height: 50vw; max-width: 640px; max-height: 640px; right: -12vw; bottom: -24vh; background: rgba(60, 196, 222, 0.08); }
   .hero-grid {
     width: min(1280px, 100% - 48px); margin: 0 auto;
-    display: block; padding: 96px 0 110px 44%;
+    display: block; padding: 72px 0 96px 46%;
   }
   /* full-bleed background clip (RoboCasa repair episode), blurred and dimmed; the schematic sits on top */
   .hero-bg { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: #0b0b0c; }
   .hero-bg video {
-    position: absolute; left: max(1.5vw, calc((100% - 1280px) / 2 - 40px)); top: 50%; transform: translateY(-50%);
-    width: min(50vw, 920px); aspect-ratio: 16 / 9; height: auto; object-fit: contain;
-    filter: brightness(0.92) saturate(0.92);
-    -webkit-mask-image: radial-gradient(ellipse 74% 70% at 50% 50%, #000 48%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
-            mask-image: radial-gradient(ellipse 74% 70% at 50% 50%, #000 48%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 30% 50%;
+    filter: brightness(0.92) saturate(0.95);
   }
+  .clip-note {
+    position: absolute; left: 28px; bottom: 24px; z-index: 1; margin: 0; max-width: min(56ch, 40vw);
+    color: rgba(236, 240, 245, 0.8); font: 400 12.5px/1.5 var(--label); letter-spacing: 0.01em; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  }
+  .clip-note b { color: #fff; font-weight: 600; }
   /* clip stays clear on the left, fades into the page colour where the text sits */
+  /* clear on the left, page colour under the text */
   .hero-bg::after {
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(90deg, rgba(11, 11, 12, 0) 0%, rgba(11, 11, 12, 0) 38%, rgba(11, 11, 12, 0.55) 52%, rgba(11, 11, 12, 0.85) 62%, rgba(11, 11, 12, 0.85) 100%);
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(11, 11, 12, 0.05) 0%, rgba(11, 11, 12, 0.18) 34%, rgba(11, 11, 12, 0.76) 60%, rgba(11, 11, 12, 0.93) 100%),
+      linear-gradient(180deg, rgba(11, 11, 12, 0.3) 0%, rgba(11, 11, 12, 0) 16%, rgba(11, 11, 12, 0) 76%, rgba(11, 11, 12, 0.6) 100%);
   }
   /* left: the mechanism, drawn live, on a translucent panel over the clip */
-  .hero-media { position: relative; min-width: 0; max-width: 680px; margin-top: 34px; padding: 18px 20px 14px; border-radius: 16px;
-    background: rgba(11, 11, 12, 0.5); border: 1px solid var(--h-line); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45); }
+  .mechanism { --h-bg: #0b0b0c; --h-ink: #f2f5fb; --h-muted: #b3bdd1; --h-faint: #7f8aa3; --h-line: rgba(255, 255, 255, 0.14); --h-accent: #5aa2f0; --h-accent-2: #3cc4de; background: #0b0b0c; color: #f2f5fb; padding: 56px 0 64px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+  .mechanism-inner { width: min(1100px, 100% - 48px); margin: 0 auto; }
+  .hero-media { position: relative; min-width: 0; margin: 0; }
   .hero-anim { display: block; width: 100%; height: auto; overflow: visible; }
   .hero-anim text { font-family: var(--mono); }
   .hero-anim .lbl { fill: var(--h-muted); font-size: 15px; font-weight: 500; }
@@ -459,15 +460,16 @@
   .nav.show { transform: none; }
 
   @media (max-width: 1100px) {
-    .hero-grid { padding: 88px 0 100px; }
-    .hero-bg video { left: 50%; top: 0; transform: translateX(-50%); width: min(92vw, 720px); }
-    .hero-bg::after { background: linear-gradient(180deg, rgba(11, 11, 12, 0.15) 0%, rgba(11, 11, 12, 0.55) 32%, rgba(11, 11, 12, 0.95) 55%, rgba(11, 11, 12, 0.98) 100%); }
-    .hero-media { max-width: 720px; }
+    .hero-grid { padding: 58vh 0 72px; }
+    .hero-bg video { height: 62vh; object-position: 50% 40%; }
+    .clip-note { display: none; }
+    .hero-bg::after { background: linear-gradient(180deg, rgba(11, 11, 12, 0.1) 0%, rgba(11, 11, 12, 0.2) 40%, rgba(11, 11, 12, 1) 62%, rgba(11, 11, 12, 1) 100%); }
+    .hero-media { max-width: 720px; margin: 0 auto; }
     .hero-logo { display: none; }
   }
   @media (max-width: 720px) {
     .hero-grid { width: calc(100% - 36px); padding: 72px 0 90px; }
-    .hero-media { display: none; }
+    .mechanism { display: none; }
     .hero-sub { max-width: none; }
     .quick-links { gap: 8px; }
     .resource-link { padding: 9px 14px; font-size: 13px; }
@@ -516,8 +518,9 @@
 </nav>
 
 <header class="hero" id="top">
-  <div class="hero-bg" aria-hidden="true">
-    <video autoplay muted loop playsinline preload="metadata" poster="assets/hero-bg.webp" tabindex="-1"><source src="assets/hero-bg.mp4" type="video/mp4"></video>
+  <div class="hero-bg">
+    <video autoplay muted loop playsinline preload="metadata" poster="assets/hero-bg.webp" tabindex="-1" aria-label="RoboCasa episode: the policy misses the squash, Spotter's judge retreats the arm and hands back, the policy regrasps and places it on the plate."><source src="assets/hero-bg.mp4" type="video/mp4"></video>
+    <p class="clip-note"><b>RoboCasa · microwave → counter</b> &nbsp;The policy closes on air; the screener flags it, the judge retreats the arm and hands back; the policy regrasps and places the squash. Motion at 1×, inference pauses cut.</p>
   </div>
   <div class="hero-grid">
     <div class="hero-inner">
@@ -555,62 +558,65 @@
       </nav>
 
       <p class="tldr"><strong>In brief</strong>A pretrained robot policy leads. A faster VLM screens every action chunk in parallel, and a frontier VLM steps in only to repair a confirmed error, with no scene reset. Spotter lifts π₀.₅ by <b>up to 7.5 points</b> on RoboCasa and real-robot success from <b>53% to 83%</b>, in about 70% less time than a VLM-led design.</p>
-
-    <div class="hero-media" aria-hidden="true">
-      <svg class="hero-anim" viewBox="0 0 760 330" role="img" aria-label="Schematic: the embodied model acts chunk by chunk; a faster VLM screens each chunk; after two flags the frontier VLM judges and repairs.">
-        <g id="hero-seq">
-          <rect class="zone seq" style="--i:5" x="288" y="34" width="256" height="232"/>
-          <text class="zone-lbl seq" style="--i:5" x="300" y="259">intervention</text>
-
-          <text class="lbl em" x="0" y="76">Embodied model</text>
-          <text class="lbl fast" x="0" y="156">Faster VLM</text>
-          <text class="lbl front" x="0" y="236">Frontier VLM</text>
-
-          <!-- action chunks -->
-          <g class="chunk em seq" style="--i:0"><rect x="160" y="52" width="58" height="36"/><text x="189" y="70">C₁</text></g>
-          <g class="chunk em seq" style="--i:2"><rect x="226" y="52" width="58" height="36"/><text x="255" y="70">C₂</text></g>
-          <g class="chunk em seq" style="--i:4"><rect x="292" y="52" width="58" height="36"/><text x="321" y="70">C₃</text></g>
-          <g class="chunk em seq" style="--i:7"><rect x="358" y="52" width="58" height="36"/><text x="387" y="70">C₄</text></g>
-          <g class="chunk em seq" style="--i:9"><rect x="424" y="52" width="58" height="36"/><text x="453" y="70">C₅</text></g>
-          <g class="chunk front seq" style="--i:11"><rect x="490" y="52" width="58" height="36"/><text x="519" y="70" style="font-size:14px">Repair</text></g>
-          <g class="chunk em seq" style="--i:12"><rect x="556" y="52" width="58" height="36"/><text x="585" y="70">C₇</text></g>
-          <g class="chunk em seq" style="--i:14"><rect x="622" y="52" width="58" height="36"/><text x="651" y="70">C₈</text></g>
-          <g class="chunk em seq" style="--i:16"><rect x="688" y="52" width="58" height="36"/><text x="717" y="70">C₉</text></g>
-
-          <!-- screening, one chunk behind -->
-          <path class="link seq" style="--i:1" d="M189 88 C189 112, 255 108, 255 132"/>
-          <g class="chunk fast seq" style="--i:1"><rect x="226" y="132" width="58" height="36"/><text x="255" y="150">✓ C₁</text></g>
-          <path class="link warn seq" style="--i:3" d="M255 88 C255 112, 321 108, 321 132"/>
-          <g class="chunk fast bad seq" style="--i:3"><rect x="292" y="132" width="58" height="36"/><text x="321" y="150">✗ C₂</text></g>
-          <path class="link warn seq" style="--i:5" d="M321 88 C321 112, 387 108, 387 132"/>
-          <g class="chunk fast bad seq" style="--i:5"><rect x="358" y="132" width="58" height="36"/><text x="387" y="150">✗ C₃</text></g>
-          <path class="link seq" style="--i:8" d="M387 88 C387 112, 453 108, 453 132"/>
-          <g class="chunk fast seq" style="--i:8"><rect x="424" y="132" width="58" height="36"/><text x="453" y="150">✓ C₄</text></g>
-          <path class="link seq" style="--i:13" d="M585 88 C585 112, 651 108, 651 132"/>
-          <g class="chunk fast seq" style="--i:13"><rect x="622" y="132" width="58" height="36"/><text x="651" y="150">✓ C₇</text></g>
-          <path class="link seq" style="--i:15" d="M651 88 C651 112, 717 108, 717 132"/>
-          <g class="chunk fast seq" style="--i:15"><rect x="688" y="132" width="58" height="36"/><text x="717" y="150">✓ C₈</text></g>
-
-          <!-- two flags in a row: the frontier VLM judges while the robot keeps moving, then repairs -->
-          <path class="link warn seq" style="--i:6" d="M387 168 C387 192, 430 190, 430 212"/>
-          <g class="chunk front seq" style="--i:6"><rect x="400" y="212" width="70" height="36"/><text x="435" y="230">Judge</text></g>
-          <path class="link warn seq" style="--i:10" d="M470 230 L519 230 L519 92" marker-end="url(#arr)"/>
-          <text class="lbl front seq" style="--i:10; font-size:12px" x="478" y="222">✗ confirmed</text>
-
-          <line class="axis" x1="160" y1="290" x2="746" y2="290"/>
-          <text class="axis-lbl" x="746" y="310" text-anchor="end">time (schematic)</text>
-        </g>
-        <defs>
-          <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#b98a2c"/>
-          </marker>
-        </defs>
-      </svg>
-    </div>
     </div>
   </div>
   <a class="scroll-cue" href="#glance">Scroll to explore<span class="chev" aria-hidden="true"><i></i><i></i><i></i></span></a>
 </header>
+<section class="mechanism" aria-label="How Spotter works, in one picture">
+  <div class="mechanism-inner">
+      <div class="hero-media" aria-hidden="true">
+        <svg class="hero-anim" viewBox="0 0 760 330" role="img" aria-label="Schematic: the embodied model acts chunk by chunk; a faster VLM screens each chunk; after two flags the frontier VLM judges and repairs.">
+          <g id="hero-seq">
+            <rect class="zone seq" style="--i:5" x="288" y="34" width="256" height="232"/>
+            <text class="zone-lbl seq" style="--i:5" x="300" y="259">intervention</text>
+  
+            <text class="lbl em" x="0" y="76">Embodied model</text>
+            <text class="lbl fast" x="0" y="156">Faster VLM</text>
+            <text class="lbl front" x="0" y="236">Frontier VLM</text>
+  
+            <!-- action chunks -->
+            <g class="chunk em seq" style="--i:0"><rect x="160" y="52" width="58" height="36"/><text x="189" y="70">C₁</text></g>
+            <g class="chunk em seq" style="--i:2"><rect x="226" y="52" width="58" height="36"/><text x="255" y="70">C₂</text></g>
+            <g class="chunk em seq" style="--i:4"><rect x="292" y="52" width="58" height="36"/><text x="321" y="70">C₃</text></g>
+            <g class="chunk em seq" style="--i:7"><rect x="358" y="52" width="58" height="36"/><text x="387" y="70">C₄</text></g>
+            <g class="chunk em seq" style="--i:9"><rect x="424" y="52" width="58" height="36"/><text x="453" y="70">C₅</text></g>
+            <g class="chunk front seq" style="--i:11"><rect x="490" y="52" width="58" height="36"/><text x="519" y="70" style="font-size:14px">Repair</text></g>
+            <g class="chunk em seq" style="--i:12"><rect x="556" y="52" width="58" height="36"/><text x="585" y="70">C₇</text></g>
+            <g class="chunk em seq" style="--i:14"><rect x="622" y="52" width="58" height="36"/><text x="651" y="70">C₈</text></g>
+            <g class="chunk em seq" style="--i:16"><rect x="688" y="52" width="58" height="36"/><text x="717" y="70">C₉</text></g>
+  
+            <!-- screening, one chunk behind -->
+            <path class="link seq" style="--i:1" d="M189 88 C189 112, 255 108, 255 132"/>
+            <g class="chunk fast seq" style="--i:1"><rect x="226" y="132" width="58" height="36"/><text x="255" y="150">✓ C₁</text></g>
+            <path class="link warn seq" style="--i:3" d="M255 88 C255 112, 321 108, 321 132"/>
+            <g class="chunk fast bad seq" style="--i:3"><rect x="292" y="132" width="58" height="36"/><text x="321" y="150">✗ C₂</text></g>
+            <path class="link warn seq" style="--i:5" d="M321 88 C321 112, 387 108, 387 132"/>
+            <g class="chunk fast bad seq" style="--i:5"><rect x="358" y="132" width="58" height="36"/><text x="387" y="150">✗ C₃</text></g>
+            <path class="link seq" style="--i:8" d="M387 88 C387 112, 453 108, 453 132"/>
+            <g class="chunk fast seq" style="--i:8"><rect x="424" y="132" width="58" height="36"/><text x="453" y="150">✓ C₄</text></g>
+            <path class="link seq" style="--i:13" d="M585 88 C585 112, 651 108, 651 132"/>
+            <g class="chunk fast seq" style="--i:13"><rect x="622" y="132" width="58" height="36"/><text x="651" y="150">✓ C₇</text></g>
+            <path class="link seq" style="--i:15" d="M651 88 C651 112, 717 108, 717 132"/>
+            <g class="chunk fast seq" style="--i:15"><rect x="688" y="132" width="58" height="36"/><text x="717" y="150">✓ C₈</text></g>
+  
+            <!-- two flags in a row: the frontier VLM judges while the robot keeps moving, then repairs -->
+            <path class="link warn seq" style="--i:6" d="M387 168 C387 192, 430 190, 430 212"/>
+            <g class="chunk front seq" style="--i:6"><rect x="400" y="212" width="70" height="36"/><text x="435" y="230">Judge</text></g>
+            <path class="link warn seq" style="--i:10" d="M470 230 L519 230 L519 92" marker-end="url(#arr)"/>
+            <text class="lbl front seq" style="--i:10; font-size:12px" x="478" y="222">✗ confirmed</text>
+  
+            <line class="axis" x1="160" y1="290" x2="746" y2="290"/>
+            <text class="axis-lbl" x="746" y="310" text-anchor="end">time (schematic)</text>
+          </g>
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#b98a2c"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+  </div>
+</section>
 
 <ul class="key-results" id="glance" aria-label="Main results at a glance">
   <li><b>+7.5</b><span>pts on π₀.₅, RoboCasa (24 tasks, 1,200 episodes)</span></li>
@@ -928,7 +934,7 @@
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
     if (seq && !reduce.matches) {
       setInterval(function () {
-        if (document.hidden || hero.getBoundingClientRect().bottom < 0) return;
+        if (document.hidden || seq.getBoundingClientRect().bottom < 0 || seq.getBoundingClientRect().top > window.innerHeight) return;
         seq.style.transition = 'opacity 0.5s ease'; seq.style.opacity = '0';
         setTimeout(function () {
           Array.prototype.forEach.call(seq.querySelectorAll('.seq'), function (el) {
