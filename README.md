@@ -37,12 +37,7 @@ so the whole framework works with a **locally served, open-source Qwen and no pr
   <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="Real robot demo: stack the blue cup onto the pink cup"></a>
 </p>
 
-<p align="center">
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-sink-to-counter.jpg" width="49%" alt="RoboCasa demo: sink to counter"></a>
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-cabinet-to-counter.jpg" width="49%" alt="RoboCasa demo: cabinet to counter"></a>
-</p>
-
-<p align="center"><b>Top:</b> real robot (Franka Research 3), stacking the blue cup onto the pink cup, in real time. <b>Bottom:</b> RoboCasa, sink → counter and cabinet → counter.<br>Click any frame to watch the videos on the <a href="https://zqc3117.github.io/Spotter/#demos">project page</a>.</p>
+<p align="center">Real robot (Franka Research 3), stacking the blue cup onto the pink cup, in real time.<br>Click the frame to watch the video on the <a href="https://zqc3117.github.io/Spotter/#demos">project page</a>.</p>
 
 ## 🔥 Highlights
 

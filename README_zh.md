@@ -36,12 +36,7 @@
   <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/real-stack-cups.jpg" width="100%" alt="真机演示：把蓝杯叠到粉杯上"></a>
 </p>
 
-<p align="center">
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-sink-to-counter.jpg" width="49%" alt="RoboCasa 演示：水槽到台面"></a>
-  <a href="https://zqc3117.github.io/Spotter/#demos"><img src="assets/demos/sim-cabinet-to-counter.jpg" width="49%" alt="RoboCasa 演示：柜子到台面"></a>
-</p>
-
-<p align="center"><b>上：</b>真机（Franka Research 3）把蓝杯叠到粉杯上，真实时间。<b>下：</b>RoboCasa 仿真，水槽 → 台面、柜子 → 台面。<br>点击任意画面，到<a href="https://zqc3117.github.io/Spotter/#demos">项目主页</a>观看视频。</p>
+<p align="center">真机（Franka Research 3）把蓝杯叠到粉杯上，真实时间。<br>点击画面，到<a href="https://zqc3117.github.io/Spotter/#demos">项目主页</a>观看视频。</p>
 
 ## 🔥 核心优势
 
