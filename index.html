@@ -369,7 +369,7 @@
     .hero-anim .seq { animation: none; opacity: 1; }
   }
   .hero-inner { position: relative; }
-  .hero-logo { position: absolute; right: 0; top: 52px; width: 104px; height: 104px; opacity: 0.95; }
+  .hero-logo { position: absolute; left: calc(clamp(56px, 6.2vw, 96px) * 3.34 + 20px); top: calc(39px + clamp(56px, 6.2vw, 96px) * 0.55 - 50px); width: 100px; height: 100px; opacity: 0.95; }
 
   /* right: text */
   .hero-inner { min-width: 0; }
@@ -522,7 +522,7 @@
 
 <header class="hero" id="top">
   <div class="hero-bg">
-    <video autoplay muted loop playsinline preload="metadata" poster="assets/hero-bg.webp" tabindex="-1" aria-label="RoboCasa episode: the policy misses the squash, Spotter's judge retreats the arm and hands back, the policy regrasps it."><source src="assets/hero-bg.mp4" type="video/mp4"></video>
+    <video autoplay muted playsinline preload="metadata" poster="assets/hero-bg.webp" tabindex="-1" aria-label="RoboCasa episode: the policy misses the squash, Spotter's judge retreats the arm and hands back, the policy regrasps it."><source src="assets/hero-bg.mp4" type="video/mp4"></video>
   </div>
   <div class="hero-grid">
     <div class="hero-left">
@@ -577,7 +577,7 @@
           </defs>
         </svg>
       </div>
-        <p class="clip-note"><b>RoboCasa · microwave → counter</b> &nbsp;The policy closes on air; the screener flags it, the judge retreats the arm and hands back, and the policy regrasps the squash. Motion at 1×, inference pauses cut.</p>
+        <p class="clip-note"><b>RoboCasa · microwave → counter</b> &nbsp;The policy closes on air; the screener flags it, the judge retreats the arm and hands back, and the policy regrasps the squash. Shown at 1.5×, inference pauses cut.</p>
     </div>
 
     <div class="hero-inner">
@@ -930,6 +930,17 @@
     }
     window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(mark); } }, { passive: true });
     mark();
+
+    // hero clip: hold the last frame for 5 s, then play again
+    var bgv = document.querySelector('.hero-bg video');
+    if (bgv) {
+      bgv.addEventListener('ended', function () {
+        setTimeout(function () {
+          bgv.currentTime = 0;
+          var p = bgv.play(); if (p && p.catch) p.catch(function () {});
+        }, 5000);
+      });
+    }
 
     // replay the hero drawing every so often
     var seq = document.getElementById('hero-seq');
