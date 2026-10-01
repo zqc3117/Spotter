@@ -22,7 +22,27 @@ CloseDoubleDoor OpenDrawer CloseDrawer TurnOnStove TurnOffStove TurnOnSinkFaucet
 TurnSinkSpout CoffeeSetupMug CoffeeServeMug CoffeePressButton TurnOnMicrowave TurnOffMicrowave""".split()
 
 
+# RoboTwin 2.0 task groups (the 50 tasks of episode_sets/robotwin_tasks.txt). Without these every
+# RoboTwin task falls into "switch" and the group fallback serves an unrelated example.
+RT_GROUP = {
+    "handover_block": "handover", "handover_mic": "handover",
+    "lift_pot": "dual_lift", "grab_roller": "dual_lift", "pick_dual_bottles": "dual_lift",
+    "pick_diverse_bottles": "dual_lift", "place_dual_shoes": "dual_lift", "dump_bin_bigbin": "dual_lift",
+    "put_bottles_dustbin": "dual_lift",
+    "stack_bowls_two": "stack", "stack_bowls_three": "stack", "stack_blocks_two": "stack",
+    "stack_blocks_three": "stack", "blocks_ranking_size": "stack", "blocks_ranking_rgb": "stack",
+    "open_laptop": "articulated", "open_microwave": "articulated", "put_object_cabinet": "articulated",
+    "turn_switch": "articulated", "rotate_qrcode": "articulated", "adjust_bottle": "articulated",
+    "press_stapler": "press", "click_bell": "press", "click_alarmclock": "press",
+    "beat_block_hammer": "press", "stamp_seal": "press",
+    "shake_bottle": "inhand", "shake_bottle_horizontally": "inhand", "scan_object": "inhand",
+    "hanging_mug": "inhand", "move_playingcard_away": "inhand",
+}
+
+
 def group(task):
+    if task in RT_GROUP: return RT_GROUP[task]
+    if task.islower() and "_" in task: return "pnp_rt"   # every other RoboTwin task is a pick-and-place
     if task.startswith("PnP"): return "pnp"
     if task.startswith("Coffee") and "Mug" in task: return "mug"
     if re.match(r"(Open|Close)", task): return "door"
@@ -50,16 +70,19 @@ def pick(family, task, n):
     """Exactly n exemplars whenever the bank can supply them. Slots alternate repair / pass
     (slot 1 = a repair, slot 2 = an episode the policy finished on its own, ...); each slot
     walks the fallback chain, and a slot whose kind is exhausted takes the other kind."""
-    other = "pi05" if family == "cosmos" else "cosmos"
-    chain = ((family, dict(task=task)), (other, dict(task=task)),
-             (family, dict(grp=group(task))), (other, dict(grp=group(task))),
-             (family, {}), (other, {}))
+    # RoboTwin never borrows from the kitchen families (and they never borrow from it):
+    # a different robot, different cameras, different vocabulary.
+    other = "" if family in ("robotwin", "robodojo") else ("pi05" if family == "cosmos" else "cosmos")
+    chain = ((family, dict(task=task)),) + (((other, dict(task=task)),) if other else ())
+    chain = chain + ((family, dict(grp=group(task))),) + (((other, dict(grp=group(task))),) if other else ())
+    chain = chain + ((family, {}),) + (((other, {}),) if other else ())
     picks, seen = [], set()
     for slot in range(n):
         want = "repair" if slot % 2 == 0 else "pass"
         # An exemplar of the SAME task beats a repair borrowed from a related task: if no
         # unused same-task repair exists but a same-task pass does, this slot takes the pass.
-        same = lambda kind: [d for fam in (family, other) for d, *_ in approved(fam, task=task, kind=kind) if d not in seen]
+        same = lambda kind: [d for fam in ((family, other) if other else (family,))
+                             for d, *_ in approved(fam, task=task, kind=kind) if d not in seen]
         if want == "repair" and not same("repair") and same("pass"):
             want = "pass"
         for kind in (want, "pass" if want == "repair" else "repair"):
@@ -109,7 +132,7 @@ def main():
         return
     k = len(picks)
     print(f"WORKED EXAMPLE{'S' if k > 1 else ''} ({k}). "
-          "Each one is a past episode, from a different kitchen with the objects in other places, "
+          "Each one is a past episode, " + ("from another scene with the objects in other places" if a.family in ("robotwin", "robodojo") else "from a different kitchen with the objects in other places") + ", "
           "shown in time order with the pictures, the numbers and the decisions that were made. "
           "Copy the way of reasoning and the shape of the repair. Never copy a coordinate, a pixel "
           "or an offset from an example: read those off the live pictures and numbers only. "

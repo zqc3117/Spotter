@@ -66,6 +66,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
 - [用发布的权重评测](#-用发布的权重评测)
+- [RoboTwin 2.0](#-robotwin-20)
 - [复现论文结果](#-复现论文结果)
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
@@ -171,7 +172,58 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 | `episode_sets/s500q96.txt` | 96 | 调试用子集，每个任务 4 集 |
 
 经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
-**RoboTwin 2.0 和真机实验**不包含在本次发布中。
+
+**RoboTwin 2.0**（双臂桌面，SAPIEN）作为第三个策略族支持，见下文 [RoboTwin 2.0](#-robotwin-20)。它的评测集也随仓库提供：
+
+| 文件 | 集数 | 用途 |
+|---|---:|---|
+| `episode_sets/rt50x5q.txt` | 250 | RoboTwin 评测：50 个任务 × 5 集（demo_randomized seed-0 缓存的 30–47 号） |
+| `episode_sets/rt50x10n.txt` | 500 | rt50x5q 从中抽取的 50 × 10 池 |
+| `episode_sets/rt_ctlcheck12.txt` | 12 | 对照复现检查（6 个已知成功、6 个已知失败） |
+| `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | 每个任务经专家检查的种子（集编号到场景的映射） |
+
+RoboTwin 的经验（`memory_bank_robotwin_noreset/`）和示例（示例库里的 `fewshot_bank/robotwin/`）来自 0、20、21、50 号集，与测试集编号不重叠。
+**真机实验**不包含在本次发布中。
+
+## 🤖 RoboTwin 2.0
+
+同一套"筛子 → 判别器 → 修复"流程可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+（aloha-agilex 双臂，SAPIEN 3，50 个任务，`demo_randomized` 场景）上，策略是
+[motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)。族名为 `robotwin`：
+
+```bash
+bash spotter.sh judge --gpus 0,1,2,3                 # Qwen，与 RoboCasa 相同
+bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
+bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集，对照 + Spotter
+bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # 250 集评测（1-shot 设置）
+```
+
+**运行时。** RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
+`env/env.sh` 用 `ROBOTWIN_RUNTIME` 指向它：`<ROBOTWIN_RUNTIME>/.venv` 是解释器，`<ROBOTWIN_RUNTIME>/worktree/third_party/RoboTwin`
+是带 `assets/` 的 RoboTwin 树（物体、背景贴图、机器人本体，均来自 Hub 上的 TianxingChen/RoboTwin2.0）。按 RoboTwin 的 README 安装后，
+设置 `ROBOTWIN_RUNTIME`（或 `ROBOTWIN_ROOT` + `ROBOTWIN_PY`），再给 `ROBOTWIN_POLICY_PYTHON` 一个满足 `policy/pi05/requirements.txt`
+（openpi、lerobot < 0.3 及其补丁版 transformers）的 venv，权重解压到 `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000`
+（`ROBOTWIN_MODEL_NAME` / `ROBOTWIN_CKPT_ID`）。仿真服务用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认 `optix` 去噪器，
+因为官方的 `oidn` 在那上面会报错。
+
+**这个族改了什么。** `spotter.sh run robotwin` 里的全部设置就是论文 RoboTwin 实验的设置：每个判别窗口 2 个 chunk，遥测带最近 10 个 chunk 的动作历史，
+每集最多 5 次介入，步数预算 × 1.8，不回档，Qwen 保留 10 轮、40k token 压缩，以及 RoboTwin 自己的经验库（`memory_bank_robotwin_noreset/`）。
+筛子的空抓规则改为按夹爪开度重算（RoboTwin 报的是归一化开度，不是指间距），修复原语是 `robotwin_intervention.py` 里的双臂版本，
+判别器每个 chunk 看到三个相机（头部 + 两个腕部）。每集的场景由随仓库提供的种子缓存固定：任务的第 *k* 集就是它第 *k* 个经专家检查的种子，
+所以对照和 Spotter、以及任意两次运行，对同一个 `任务:0:k` 看到的是同一个场景。
+
+| 设置 | RoboTwin 取值 |
+|---|---:|
+| `FAMILY_OVERRIDE` / 策略端口 | `robotwin` / `9100` |
+| `WINDOW` / `RT_TEL_CHUNKS` | `2` / `10` |
+| `MAX_INTERVENTIONS` | `5` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | `10` / `40000` |
+| `ROBOTWIN_TASK_CONFIG` | `demo_randomized` |
+| `JUDGE_DEADLINE` / `ACT_DEADLINE` | 每次调用 `1200` / `2400` 秒 |
+| `RT_MEMORY_BANK` | `memory_bank_robotwin_noreset`（`RT_MEMORY=0` 关闭经验） |
+
+结果与 RoboCasa 一样按格配对（`results.jsonl`，`bash spotter.sh summary`）。同一评测集的 `--arm ctrl` 给出纯策略基线；
+基线受环境影响，请与同一台机器上跑出的对照比较，不要与别处的数字比较。
 
 ## 🚀 用发布的权重评测
 

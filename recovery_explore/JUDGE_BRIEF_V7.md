@@ -333,8 +333,9 @@ different to see — a corrected height, a different line in — or do the last 
 yourself: close, lift, and look at whether the object came up. A close-and-lift of
 your own that works is worth more than a hand-back that repeats the miss.
 
-A plan may not open with a policy step, and two policy steps may not sit next to
-each other; a plan written that way is rejected whole and nothing in it runs.
+A plan may open with a policy step and two policy steps may sit next to each other
+where the robot's addendum below says so (RoboTwin); on the other robots a plan
+written that way is still rejected whole and nothing in it runs.
 Handing control back changes nothing by itself -- the controller resumes from the
 same pose that was already failing, and you have spent an intervention to watch
 it fail again. Each hand-back has to be bought with a repair of your own
