@@ -320,15 +320,16 @@
   /* full-bleed background clip (RoboCasa repair episode), blurred and dimmed; the schematic sits on top */
   .hero-bg { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: #0b0b0c; }
   .hero-bg video {
-    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 22% 50%;
-    filter: blur(1.5px) brightness(0.88) saturate(0.9);
+    position: absolute; left: max(1.5vw, calc((100% - 1280px) / 2 - 40px)); top: 50%; transform: translateY(-50%);
+    width: min(50vw, 920px); aspect-ratio: 16 / 9; height: auto; object-fit: contain;
+    filter: brightness(0.92) saturate(0.92);
+    -webkit-mask-image: radial-gradient(ellipse 74% 70% at 50% 50%, #000 48%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
+            mask-image: radial-gradient(ellipse 74% 70% at 50% 50%, #000 48%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
   }
   /* clip stays clear on the left, fades into the page colour where the text sits */
   .hero-bg::after {
     content: ""; position: absolute; inset: 0;
-    background:
-      linear-gradient(90deg, rgba(11, 11, 12, 0.06) 0%, rgba(11, 11, 12, 0.18) 26%, rgba(11, 11, 12, 0.62) 44%, rgba(11, 11, 12, 0.93) 58%, rgba(11, 11, 12, 0.98) 100%),
-      linear-gradient(180deg, rgba(11, 11, 12, 0.45) 0%, rgba(11, 11, 12, 0) 22%, rgba(11, 11, 12, 0) 70%, rgba(11, 11, 12, 0.75) 100%);
+    background: linear-gradient(90deg, rgba(11, 11, 12, 0) 0%, rgba(11, 11, 12, 0) 38%, rgba(11, 11, 12, 0.55) 52%, rgba(11, 11, 12, 0.85) 62%, rgba(11, 11, 12, 0.85) 100%);
   }
   /* left: the mechanism, drawn live, on a translucent panel over the clip */
   .hero-media { position: relative; min-width: 0; max-width: 680px; margin-top: 34px; padding: 18px 20px 14px; border-radius: 16px;
@@ -364,7 +365,7 @@
     .hero-anim .seq { animation: none; opacity: 1; }
   }
   .hero-inner { position: relative; }
-  .hero-logo { position: absolute; right: 0; top: -14px; width: 104px; height: 104px; opacity: 0.95; }
+  .hero-logo { position: absolute; right: 0; top: 52px; width: 104px; height: 104px; opacity: 0.95; }
 
   /* right: text */
   .hero-inner { min-width: 0; }
@@ -459,7 +460,7 @@
 
   @media (max-width: 1100px) {
     .hero-grid { padding: 88px 0 100px; }
-    .hero-bg video { object-position: 50% 35%; }
+    .hero-bg video { left: 50%; top: 0; transform: translateX(-50%); width: min(92vw, 720px); }
     .hero-bg::after { background: linear-gradient(180deg, rgba(11, 11, 12, 0.15) 0%, rgba(11, 11, 12, 0.55) 32%, rgba(11, 11, 12, 0.95) 55%, rgba(11, 11, 12, 0.98) 100%); }
     .hero-media { max-width: 720px; }
     .hero-logo { display: none; }
