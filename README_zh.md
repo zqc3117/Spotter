@@ -150,7 +150,7 @@ export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
 export VLLM_VENV=$PWD/.venvs/vllm
 ```
 
-**4）1-shot 设置用的示例库（可选，151 MB）。**
+**4）1-shot 设置用的示例库（151 MB；`spotter.sh run` 默认使用，`--zero-shot` 可不用）。**
 
 ```bash
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
@@ -212,7 +212,8 @@ bash spotter.sh summary
 | `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
 | `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
 | `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
-| `--one-shot` | 给判别器加一个示例（需要示例库） |
+| `--one-shot` | 给判别器加一个示例（默认；需要示例库） |
+| `--zero-shot` | 不加示例（论文 full context 设置） |
 | `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
 | `--dry-run` | 只打印要执行的命令，不真正运行 |
 
@@ -235,7 +236,7 @@ ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
 SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL=http://127.0.0.1:8900 \
 ENGINE=qwen MODEL=qwen38 SCREEN=1 QWEN_KEEP_TURNS=20 \
 STEP_BUDGET_SCALE=1.8 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 MAX_INTERVENTIONS=8 \
-ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
+ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=1 FEWSHOT_MAX_IMAGES=12 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
   bash recovery_explore/judge_driver_v7.sh 0
 ```
 
@@ -244,16 +245,16 @@ driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 ru
 
 ## 📊 复现论文结果
 
-论文 Table 1（RoboCasa，1200 集）中 Spotter 的各行，都是在上面完整评测的基础上加以下设置；环境变量在 `spotter.sh run` 之前 export。
+论文 Table 1（RoboCasa，1200 集）中 Spotter 的各行，都是在上面完整评测的基础上加以下设置；环境变量在 `spotter.sh run` 之前 export。论文里的判别器不思考，所以 Qwen 的各行都还要设 `QWEN_REPAIR_THINK=0`。
 
 | Table 1 中的行 | 设置 |
 |---|---|
 | 具身模型，1.0× / 1.8× 步数上限 | `--arm ctrl`，配合 `STEP_BUDGET_SCALE=1.0` / `1.8` |
-| Spotter (Qwen)，full context | `spotter.sh` 默认值 |
-| Spotter (Qwen)，short context | `TEL_CHUNKS=3 QWEN_KEEP_TURNS=3 COMPACT_AT=22000 MAX_INTERVENTIONS=3 SCREEN_CONFIRM2=0`（π0.5 另加 `WINDOW=2`） |
-| Spotter (Qwen)，1-shot | `--one-shot` |
-| Spotter (GPT)，有 / 无筛子 | `ENGINE=api`，配合 `SCREEN=1` / `SCREEN=0` |
-| Spotter (GPT)，1-shot | `ENGINE=api` 加 `--one-shot` |
+| Spotter (Qwen)，full context | `--zero-shot` |
+| Spotter (Qwen)，short context | `--zero-shot`，配合 `TEL_CHUNKS=3 QWEN_KEEP_TURNS=3 COMPACT_AT=22000 MAX_INTERVENTIONS=3 SCREEN_CONFIRM2=0`（π0.5 另加 `WINDOW=2`） |
+| Spotter (Qwen)，1-shot | `spotter.sh` 默认值（one-shot） |
+| Spotter (GPT)，有 / 无筛子 | `ENGINE=api` 加 `--zero-shot`，配合 `SCREEN=1` / `SCREEN=0` |
+| Spotter (GPT)，1-shot | `ENGINE=api` |
 | Harness VLA | 用其自身代码运行：[RLinf/RPent](https://github.com/RLinf/RPent) |
 
 Table 1 中"固定重试"的两行不包含在本次发布中。
@@ -335,9 +336,9 @@ bash spotter.sh summary pi05_sall500
 | `ENGINE` / `MODEL` | `qwen` / `qwen38` | 使用本地 Qwen 判别器；`ENGINE=api` 换成 GPT-6 Astra。 |
 | `COMPACT_AT` | `110000` | Qwen 对话压缩阈值（token）。 |
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
-| `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
+| `FEWSHOT` | `0` | `1` 表示加一个示例；`spotter.sh` 默认开（`--zero-shot` 关），需要示例库。 |
 
-Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `2000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+Qwen 只在介入的修复回合里思考（默认开），每次最多 `QWEN_THINK_BUDGET`（默认 `2000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
 
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 

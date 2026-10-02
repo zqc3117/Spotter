@@ -154,7 +154,7 @@ export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
 export VLLM_VENV=$PWD/.venvs/vllm
 ```
 
-**4) Example bank for the 1-shot setting (optional, 151 MB).**
+**4) Example bank for the 1-shot setting (151 MB; `spotter.sh run` uses it by default, `--zero-shot` runs without it).**
 
 ```bash
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
@@ -216,7 +216,8 @@ bash spotter.sh summary
 | `--lanes N` | episodes run in parallel; lane `N` runs its own simulation service on port `8450+N` |
 | `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
 | `--arm` | `both` (control and Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
-| `--one-shot` | add one worked example to the judge (needs the example bank) |
+| `--one-shot` | one worked example in the judge's brief (default; needs the example bank) |
+| `--zero-shot` | no worked example (the paper's full-context setting) |
 | `--run NAME` | run name (default `<family>_<set>`); rerunning the same name resumes it |
 | `--dry-run` | print the commands without running them |
 
@@ -239,7 +240,7 @@ ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
 SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL=http://127.0.0.1:8900 \
 ENGINE=qwen MODEL=qwen38 SCREEN=1 QWEN_KEEP_TURNS=20 \
 STEP_BUDGET_SCALE=1.8 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 MAX_INTERVENTIONS=8 \
-ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
+ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=1 FEWSHOT_MAX_IMAGES=12 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
   bash recovery_explore/judge_driver_v7.sh 0
 ```
 
@@ -250,16 +251,17 @@ claim episodes from the same queue, and each lane stops once the run has `TARGET
 ## 📊 Reproducing the Paper
 
 The Spotter rows of Table 1 (RoboCasa, 1,200 episodes) are the full evaluation above with these settings;
-variables are exported before `spotter.sh run`.
+variables are exported before `spotter.sh run`. The paper's judge did not think, so every Qwen row also sets
+`QWEN_REPAIR_THINK=0`.
 
 | Table 1 row | Settings |
 |---|---|
 | Embodied model, 1.0× / 1.8× step limit | `--arm ctrl` with `STEP_BUDGET_SCALE=1.0` / `1.8` |
-| Spotter (Qwen), full context | `spotter.sh` defaults |
-| Spotter (Qwen), short context | `TEL_CHUNKS=3 QWEN_KEEP_TURNS=3 COMPACT_AT=22000 MAX_INTERVENTIONS=3 SCREEN_CONFIRM2=0` (π0.5 also `WINDOW=2`) |
-| Spotter (Qwen), 1-shot | `--one-shot` |
-| Spotter (GPT), with / no screener | `ENGINE=api` with `SCREEN=1` / `SCREEN=0` |
-| Spotter (GPT), 1-shot | `ENGINE=api` and `--one-shot` |
+| Spotter (Qwen), full context | `--zero-shot` |
+| Spotter (Qwen), short context | `--zero-shot` with `TEL_CHUNKS=3 QWEN_KEEP_TURNS=3 COMPACT_AT=22000 MAX_INTERVENTIONS=3 SCREEN_CONFIRM2=0` (π0.5 also `WINDOW=2`) |
+| Spotter (Qwen), 1-shot | `spotter.sh` defaults (one-shot) |
+| Spotter (GPT), with / no screener | `ENGINE=api` and `--zero-shot`, with `SCREEN=1` / `SCREEN=0` |
+| Spotter (GPT), 1-shot | `ENGINE=api` |
 | Harness VLA | run with its own code: [RLinf/RPent](https://github.com/RLinf/RPent) |
 
 The fixed-retry rows of Table 1 are not included in this release.
@@ -353,9 +355,9 @@ bash spotter.sh summary pi05_sall500
 | `ENGINE` / `MODEL` | `qwen` / `qwen38` | Local Qwen judge; `ENGINE=api` for GPT-6 Astra. |
 | `COMPACT_AT` | `110000` | Qwen conversation compaction threshold (tokens). |
 | `QWEN_KEEP_TURNS` | `20` | Recent judge turns kept in full. |
-| `FEWSHOT` | `0` | `1` adds one worked example (`--one-shot`); needs the example bank. |
+| `FEWSHOT` | `0` | `1` adds one worked example; `spotter.sh` sets it by default (`--zero-shot` for `0`); needs the example bank. |
 
-Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `2000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
+Qwen thinks only in the repair turns of an intervention (on by default), up to `QWEN_THINK_BUDGET` (default `2000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
 
 How the judge is paced has its own switches, all off or conservative by default:
 
