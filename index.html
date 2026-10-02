@@ -647,31 +647,36 @@
     <div class="wrap demos-wrap">
       <span class="eyebrow">See it work</span>
       <h2>Demos</h2>
-      <p class="lead">Each recording shows the cameras the system sees, what the screener and the judge said at that moment, and a timeline of who was busy: the policy, the screener, or the judge.</p>
+      <p class="lead">Each recording shows the cameras the system sees, what the screener and the judge said at that moment, and a timeline of who was busy: the policy, the screener, or the judge. Each RoboCasa clip runs the same episode twice, side by side: the policy alone on the left, the policy with Spotter on the right.</p>
       <figure class="demo demo-main">
         <div class="demo-media">
           <video controls muted playsinline preload="none" poster="assets/demo/real-stack-cups.webp" data-autoplay aria-label="Real robot: stack the blue cup onto the pink cup"><source src="assets/demo/real-stack-cups.mp4" type="video/mp4"></video>
-          <span class="demo-tag">Real robot · 1×</span>
+          <span class="demo-tag">Real robot · up to 5×</span>
         </div>
-        <figcaption><b>Franka Research 3 · “Stack the blue cup onto the pink cup.”</b> The hand stalls 2 cm above the cup with one finger over the rim. The screener flags it, the judge sees that closing here would tip the cup, nudges the hand sideways and hands back; the policy finishes the stack. Real time, 57 s.</figcaption>
+        <figcaption><b>Franka Research 3 · “Stack the blue cup onto the pink cup.”</b> The hand stalls 2 cm above the cup with one finger over the rim. On the second alarm in a row, the Qwen screener calls the GPT judge, which measures in the wrist view that the cup sits 2.6 cm to the left of the fingers, nudges the hand sideways and hands back; the policy finishes the stack. 56 s of real time, shown at up to 5×.</figcaption>
       </figure>
-      <div class="demo-grid">
-        <figure class="demo">
-          <div class="demo-media">
-            <video controls muted playsinline preload="none" poster="assets/demo/sim-sink-to-counter.webp" data-autoplay aria-label="RoboCasa: pick the sweet potato from the sink and place it on the plate"><source src="assets/demo/sim-sink-to-counter.mp4" type="video/mp4"></video>
-            <span class="demo-tag">RoboCasa · 1.5×</span>
-          </div>
-          <figcaption><b>Sink → counter.</b> The gripper closes on nothing; the judge retreats the arm to the pre-grasp point, nudges it over the sweet potato and hands back, and the policy places it on the plate.</figcaption>
-        </figure>
-        <figure class="demo">
-          <div class="demo-media">
-            <video controls muted playsinline preload="none" poster="assets/demo/sim-cabinet-to-counter.webp" data-autoplay aria-label="RoboCasa: pick the mug from the cabinet and place it on the counter"><source src="assets/demo/sim-cabinet-to-counter.mp4" type="video/mp4"></video>
-            <span class="demo-tag">RoboCasa · 1.5×</span>
-          </div>
-          <figcaption><b>Cabinet → counter.</b> The policy misses the mug on the shelf; the judge backs off, lines the hand up with the handle and hands back, and the policy carries the mug to the counter.</figcaption>
-        </figure>
-      </div>
-      <p class="demo-note">RoboCasa clips are cut for viewing: the policy's inference pauses between chunks are removed, each judge or screener turn is shortened to a few seconds, and motion plays at 1.5×. The on-screen clock is robot time, so it jumps where the cuts are.</p>
+      <figure class="demo">
+        <div class="demo-media">
+          <video controls muted playsinline preload="none" poster="assets/demo/sim-steak-counter-to-cabinet.webp" data-autoplay aria-label="RoboCasa, policy alone versus policy with Spotter: pick the steak from the counter and place it in the cabinet"><source src="assets/demo/sim-steak-counter-to-cabinet.mp4" type="video/mp4"></video>
+          <span class="demo-tag">RoboCasa · up to 5×</span>
+        </div>
+        <figcaption><b>Steak · counter → cabinet.</b> The gripper closes on nothing and the arm backs away with the steak still on the counter. The Qwen screener flags the empty grasp; the judge retreats the arm to the pre-grasp point, sees the steak just below in the wrist view, lowers the hand 3 cm and hands back, and the policy puts the steak in the cabinet. The policy alone fails.</figcaption>
+      </figure>
+      <figure class="demo">
+        <div class="demo-media">
+          <video controls muted playsinline preload="none" poster="assets/demo/sim-jug-counter-to-cabinet.webp" data-autoplay aria-label="RoboCasa, policy alone versus policy with Spotter: pick the jug from the counter and place it in the cabinet"><source src="assets/demo/sim-jug-counter-to-cabinet.mp4" type="video/mp4"></video>
+          <span class="demo-tag">RoboCasa · up to 5×</span>
+        </div>
+        <figcaption><b>Jug · counter → cabinet.</b> The gripper closes all the way on nothing and lifts away, leaving the jug on the counter. The judge retreats the arm to the pre-grasp point, lowers the hand 2 cm and hands back; this time the policy closes on the jug, a follow-up check confirms the grasp, and the jug goes into the cabinet. The policy alone fails.</figcaption>
+      </figure>
+      <figure class="demo">
+        <div class="demo-media">
+          <video controls muted playsinline preload="none" poster="assets/demo/sim-potato-plate-to-pan.webp" data-autoplay aria-label="RoboCasa, policy alone versus policy with Spotter: pick the potato from the plate and place it in the pan"><source src="assets/demo/sim-potato-plate-to-pan.mp4" type="video/mp4"></video>
+          <span class="demo-tag">RoboCasa · up to 5×</span>
+        </div>
+        <figcaption><b>Potato · plate → pan.</b> The policy closes on nothing and backs off with the potato still on the plate. The screener calls the judge, which retreats the arm to the pre-grasp point, lowers the hand 2 cm and hands back; the policy picks the potato up and puts it in the pan. The policy alone fails.</figcaption>
+      </figure>
+      <p class="demo-note">Clips are cut for viewing: stretches marked ×5 on screen are fast-forwarded, and in RoboCasa the simulator's render and save time is removed. The RoboCasa clock is robot time.</p>
     </div>
   </section>
   <section id="why">
