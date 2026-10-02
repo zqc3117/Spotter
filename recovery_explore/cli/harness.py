@@ -478,10 +478,21 @@ def main() -> None:
             ga = tel.get("grasp_attempts") or []
             lines.append("")
             if ga:
-                lines.append(f"Gripper open/close events this episode ({len(ga)} total, newest {min(len(ga), 4)} shown). The only state that can be")
-                lines.append("identified from aperture alone is 'shut all the way with nothing between the")
-                lines.append("fingers'; aperture cannot tell 'holding something' from 'open', so the absence")
-                lines.append("of an entry is not evidence that anything is held.")
+                if os.environ.get("TEL_PNP_HOLD") == "1":
+                    # cosmos pick-and-place (judge_driver_v7.sh exports TEL_PNP_HOLD=1): after a close,
+                    # a width that stopped at 12-50 mm with no new empty entry is usually a held object,
+                    # so the judge is told how to read it instead of that the width cannot show a hold.
+                    lines.append(f"Gripper open/close events this episode ({len(ga)} total, newest {min(len(ga), 4)} shown). Aperture alone")
+                    lines.append("identifies 'shut all the way with nothing between the fingers'; a missing entry does not by itself prove")
+                    lines.append("a hold, and while grip cmd is near -1 (open) the width cannot tell holding from open. After a close (grip")
+                    lines.append("cmd near +1), fingers that stopped between about 12 and 50 mm and stayed there, with no new entry for that")
+                    lines.append("close, are usually on the object: supporting evidence, not proof. A miss or a drop is the object seen")
+                    lines.append("still at its source while the hand is elsewhere, or at rest away from the hand, in a third-person row.")
+                else:
+                    lines.append(f"Gripper open/close events this episode ({len(ga)} total, newest {min(len(ga), 4)} shown). The only state that can be")
+                    lines.append("identified from aperture alone is 'shut all the way with nothing between the")
+                    lines.append("fingers'; aperture cannot tell 'holding something' from 'open', so the absence")
+                    lines.append("of an entry is not evidence that anything is held.")
                 for e in ga[-4:]:
                     # The server writes English "closed-empty" / "reopened" (_grasp_events in
                     # env_service.py), but this once checked for the Chinese word for "closed", so every empty

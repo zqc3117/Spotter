@@ -49,15 +49,27 @@ container that tips as the fingers open is the failure to catch.
 - **Wrong region**: the arm shuttles somewhere the instruction never mentions
 - **Placement pose**: held in an orientation that will not stay put once released, e.g. a cylinder on its side. Fix it with `rotate` **before** opening the fingers
 
-**One missed grasp is not yet a failure.** After closing on nothing the policy
-usually reopens and tries again on its own, and most of those second tries land.
-The intervention that breaks a run is the one sent at the first empty closure:
-it takes over an arm that was about to retry. Wait through the first miss. Act
-when the policy has missed twice, or when after a miss it withdraws and heads
-away from the source with the fingers shut and does not turn back. And when you
-do act and the repair does not take, the next intervention has to differ in kind;
-the same open-place-hand-back sent three times in a row is what emptied the
-allowance on the runs that lost these cells.
+**After one empty closure, decide on the first window you see; do not wait for a
+second miss.** Having closed on nothing, the policy on these tasks seldom reopens
+and comes back for another try; far more often it keeps the fingers shut and
+carries the empty hand away, and each window of that takes the arm further from
+the line it missed on. So decide on this window. If a later close stopped between
+about 12 and 50 mm with no new entry, or a third-person row shows the object
+moving with the hand, the policy has already regrasped: the miss is history,
+answer ok. If the fingers are still shut to a few millimetres and the hand is
+moving away from the source, nothing came with it: repair now. One kind of
+entry needs a look before it is called a miss: when the fingers had stayed
+between about 12 and 50 mm under a close for several chunks while the hand
+travelled, and only then ran shut, what they held has left them — set down where
+the policy was taking it, or dropped on the way — and fingers opening soon after
+are the policy letting go. Find the object near where the entry was logged:
+resting at the destination, it was placed, answer ok; lying anywhere else, it was
+dropped. Compare the pre-grasp anchor's step with the entry's: when it is many
+chunks earlier, the anchor lies back where the object was first picked up, and a
+retreat there drags the arm back across the scene. And when you do
+act and the repair does not take, the next intervention has to differ in kind;
+the same open-place-hand-back sent again and again spends the allowance without
+changing the outcome.
 
 **The first two have a precondition: the policy must have attempted a grasp.**
 An approach legitimately takes several windows. Read the **grasp attempt list**
@@ -69,9 +81,40 @@ has reached the object is the classic misjudgement here.
 **A missed grasp is the moment to act, and waiting costs you the chance.** The
 typical miss has the gripper right above the object and simply not descending
 far enough, or sitting a centimetre or two to one side, so the fingertips graze
-the surface and close on air. The correction needed is tiny. But with every
-window you wait the policy withdraws the arm further, and from there it is no
-longer a small correction.
+the surface and close on air. The correction needed is tiny, but every window
+you wait the policy withdraws and turns the wrist further, until a retreat can no
+longer bring the hand back. On these tasks the first repair after such a miss
+usually does better without the `policy 2` ending of the default repair:
+`retreat` to `pre_grasp`, then with the fingers open lower the hand a centimetre
+or two (or shift it that much toward the object's centre if the frames show it
+was off to one side), then answer `fixed` with an empty plan. The policy makes
+its own close from the corrected pose and has the next windows to itself; a
+hand-back inside the repair gives it a chunk or two and asks you to judge a close
+that has not settled. If the retreat reports it stopped short of the pre-grasp
+point, the hand is not on the old line: do not lower or hand back from there;
+answer `fixed` with an empty plan. All of this is about fingers that shut on
+nothing.
+
+**A close that stopped short is a grasp until the pictures show otherwise.** Read
+the width together with the grip cmd column. While the fingers are commanded open
+(grip cmd near -1) the width says nothing about holding. After a close (grip cmd
+near +1), fingers with nothing between them run down to a few millimetres and log
+a "closed all the way" entry; fingers that stopped between about 12 and 50 mm and
+stay there, with no new entry for that close, are resting on something -- on
+these tasks usually the object. That supports a grasp without proving it (the
+width can outlast a slip), but it moves the burden: in that state an arm
+travelling away from the source is more likely carrying than withdrawing, a pause
+of a window is not yet a stall, and a smaller width you predicted but did not see
+is not a miss. Call a miss or a drop when you can point to it: a new empty
+closure in the event list, or, in a third-person row, the object still at its
+source while the hand is elsewhere, or at rest away from the hand. If you cannot,
+the evidence favours ok and the next window will show more. This matters most
+in the windows after you hand back, when that grasp is what your repair was for.
+Read it afresh each window instead of carrying an earlier reading forward, and
+when a repair is meant to put the object in the hand, write its `expect` as the
+object leaving its support with the fingers stopped at its width, not as a width
+of a few millimetres. (On the two mug tasks the handle reading above applies
+instead.)
 
 ### What does not justify intervening
 

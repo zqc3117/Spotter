@@ -26,7 +26,11 @@ the newest frames against each other and ask three questions in this order:
    to the fingers across frames is being carried; one that stays put while the
    hand leaves is not held.
 3. **Which way did the hand move, and did it match the command?** A large
-   commanded displacement with a hand that barely travelled is a genuine stall.
+   commanded displacement with a hand that barely travelled means the hand is
+   up against something. Reaching for or carrying a free object, that is a
+   stall. On a fixture it is also what pressing looks like: a hand on the
+   control the instruction names shows exactly this while it works, and the
+   task section says how to tell pressing from failing.
 
 The numbers left in the table exist to settle exactly those questions: the
 commanded-versus-travelled pair for question 3, the aperture for the gripper.

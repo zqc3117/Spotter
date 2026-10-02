@@ -671,6 +671,35 @@ $exp
 Before anything else, say whether that expectation held. If it did, do not repair the
 same thing twice. If it did not, a further intervention has to change category, not offset."
   fi
+  # cosmos pick-and-place: judge the expectation by the object and re-read the grasp every window,
+  # so a held object after a hand-back (fingers stopped in the tens of mm) is not taken for a miss.
+  case "$FAMILY:${TASK:-}" in cosmos:PnP*) ;; *) return 0 ;; esac
+  if [ "${VERIFY_PENDING:-0}" = 1 ]; then
+    IV_BLOCK="$head
+$exp
+THIS IS A VERIFICATION WINDOW. You intervened in the window just before this one, so
+you may not intervene again here. Open your diagnosis by answering, from the numbers
+and the image: did that expectation hold -- yes, no, or cannot tell yet -- and on what
+evidence. Then answer ok. Judge it by the object, not by the exact width you wrote: a
+close the policy made that stopped in the tens of mm, with no new 'closed all the way'
+entry, is usually the object in the hand whatever number you predicted, and a hand
+carrying it means yes. While the policy is still re-approaching or closing, cannot
+tell yet is the honest answer. Say no only when you can point to the miss: a new empty
+closure, or the object still at its source in a third-person row while the hand is
+elsewhere."
+  else
+    IV_BLOCK="$head
+$exp
+First read the grasp from this window's rows and images, not from what you concluded in
+earlier windows, then say whether that expectation held -- judged by the object, not by
+the exact width you wrote. If the policy has the object (a close that stopped in the
+tens of mm, no new 'closed all the way' entry, nothing left behind at the source) or is
+re-approaching on its own with the fingers open, there is usually nothing for you to
+repair, and ok is the better answer. If the repair did not take -- a new empty closure,
+or the object at its source while the hand is elsewhere -- decide as you would before
+any repair whether the policy is recovering on its own. Do not repair the same thing
+twice; if you do act again, change the category of the repair, not its offset."
+  fi
 }
 
 build_recap(){ MAX_RESETS="$MAX_RESETS" python3 - "$EVENTS" "$NINT" "$MAX_INTERVENTIONS" "$GAVEUP" << 'PY'
@@ -1103,6 +1132,8 @@ while true; do
   done < $QUEUE
   [ -z "$NEXT" ] && { log "queue exhausted, stopping"; break; }
   TASK=${NEXT%%:*}; REST=${NEXT#*:}; SEED=${REST%%:*}; EP=${REST##*:}
+  # cosmos pick-and-place cells get the hold-reading wording (cli/harness.py, build_iv_block, APERTURE_NOTE)
+  case "$FAMILY:$TASK" in cosmos:PnP*) export TEL_PNP_HOLD=1 ;; *) export TEL_PNP_HOLD=0 ;; esac
   CELL="jd-${TASK}_s${SEED}_ep${EP}"; CD=$OUT/lane$LANE/$CELL
   # Clear a same-named directory first: when rerunning a cell, leftover w*/ frames from the last run would mix with the new ones,
   # and the judge would see pictures from another episode (this really happened during the t1 rerun).
@@ -1940,6 +1971,12 @@ whether the object came up with the hand in the images, not by the number alone.
           APERTURE_NOTE="The aperture is the only thing that tells you the fingers shut on nothing (under
 12 mm). It cannot tell holding from open, so confirm a grasp by whether the object
 came up with the hand in the images, not by the number alone."
+          # cosmos pick-and-place: read a width that stopped at 12-50 mm after a close as a likely hold
+          case "$FAMILY:$TASK" in cosmos:PnP*) APERTURE_NOTE="The aperture tells you the fingers shut on nothing (under 12 mm); while they are
+commanded open it cannot tell holding from open. After a close, fingers that stopped
+between about 12 and 50 mm and stayed there while the hand lifted or travelled are most
+often on the object: confirm it by the object leaving its support in a third-person
+row, but do not call that width a miss on its own." ;; esac
         fi
         cat > "$CD/p_exec_w${W}_a${ATT}_r$((R-1)).txt" << PEOF
 Your plan was executed. It stopped because: $SR
