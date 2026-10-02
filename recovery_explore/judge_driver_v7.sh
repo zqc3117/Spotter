@@ -746,7 +746,7 @@ retreat without "to" is the soft undo: one action that servos the hand back to t
 when you took over and puts the fingers back the way they were, dropping anything
 your repair picked up. Nothing else in the scene is touched. Execution stops after
 it so you can look. Use it when a repair has failed and you want to hand the policy
-back what it had, or before a second attempt on a different line. It is a Cartesian
+back its own pose, or before a second attempt on a different line. It is a Cartesian
 move like any other, so from a configuration that has just blown up it can blow up
 too; then open the fingers and stop.
 
@@ -760,10 +760,10 @@ Where it sits in the plan is your call (2026-09-21): a plan may open with it and
 hand-backs may sit next to each other. Buying each hand-back with a repair of your own
 is still the better habit -- the controller resumes from the pose that was already
 failing -- but the shape is no longer refused.
-Each chunk handed back is taken from the fixed policy-step budget of the episode, which
-the policy needs to finish the task; your other steps are not. Hand back once, at
-the end of the repair, for one or two chunks -- not as a way to see what the policy
-will do.
+Each chunk handed back, and every simulator step your own moves take, is taken from
+the fixed step budget of the episode, which the policy needs to finish the task.
+Hand back once, at the end of the repair, for one or two chunks -- not as a way to
+see what the policy will do.
 
 A pixel target is unprojected server-side and then offset by dz metres, so you can
 point at what you see instead of computing world coordinates. Pick pixels only from
@@ -1051,7 +1051,7 @@ travelled several times what you asked, answer retry instead: the simulator rewi
 to the state you took over in.'
   BLOWUP_ACTION='Answer retry: the rewind puts the arm back where you took over. After the rewind,
 unless you have a plan that needs no Cartesian move from that region, answer fixed
-with an empty plan -- that hands the policy back exactly what it had.'
+with an empty plan -- that hands the policy back the scene it had.'
   RETRY_DOC='- "retry": not fixed; the simulator is rewound to the start of this intervention and
   you plan again from scratch. plan MUST be empty.'
 else
@@ -1067,10 +1067,10 @@ note saying what happened.'
   RETRY_DOC='There is no rewind in this run: whatever you have already done to the scene stays
 done. Finish the repair with further "continue" segments, or stop. An intervention
 whose last executed step was a successful retreat, followed by fixed with an empty
-plan, hands the policy back exactly what it had and is not counted against your
-intervention allowance -- provided the policy was not handed back in between: a
-retreat after a hand-back throws away the re-approach the policy just made, and
-that intervention counts in full.'
+plan, hands the policy back the pose and fingers it had (the steps used stay
+used) and is not counted against your intervention allowance -- provided the
+policy was not handed back in between: a retreat after a hand-back throws away
+the re-approach the policy just made, and that intervention counts in full.'
 fi
 
 # Extract the single JSON object from the model's reply. The model occasionally adds a code fence or preamble; both are handled.
@@ -1791,6 +1791,18 @@ except Exception: print('')" "$PLAN" 2>/dev/null)
 import json,sys
 try: print(len(json.loads(sys.argv[1]).get('executed') or []))
 except Exception: print('?')" "$EX") step(s) -> $SR (${NLEFT:-?} step(s) not executed, ${USED:-?} action(s) used)"
+        # The judge's own steps come out of the episode's step budget. A plan that has run that clock
+        # out leaves nothing to run, so the intervention ends here without another turn, as the
+        # episode ends when a policy chunk exhausts the budget: the next advance reports done and
+        # the episode is scored as usual.
+        if [ "$SR" = budget ] && [ "$(python3 -c "
+import json,sys
+try: s=json.loads(sys.argv[1]).get('state') or {}
+except Exception: s={}
+print(1 if s.get('policy_steps_left') == 0 else 0)" "$EX" 2>/dev/null)" = 1 ]; then
+          log "  window $W a${ATT}r$R the episode's step budget is used up (the judge's own steps included), intervention over"
+          RES=step_budget_exhausted; break
+        fi
         # How many empty grasps so far in this intervention. Consecutive empty grasps = the hand has drifted from where the grasp was first missed,
         # and more small corrections in place just keep closing on nothing -- 4 of 11 interventions ran out this way.
         [ "$SR" = closed_empty ] && NEMPTY=$((NEMPTY+1))
@@ -1843,7 +1855,7 @@ image before planning -- re-derive any target from what you see now, never from 
 numbers you used before. If the policy had been handed back in this intervention,
 you have just undone its re-approach as well; do not make that a habit. If you have a materially different approach -- a different
 line in, a lower grasp, letting the policy make the close -- send it as continue.
-Otherwise answer fixed with an empty plan: that hands the policy back what it had,
+Otherwise answer fixed with an empty plan: that hands the policy back its pose,
 and an intervention ended this way is not counted against your allowance."
         fi
         R=$((R+1))
@@ -1917,7 +1929,7 @@ for e in d.get('executed') or []:
     if e.get('error'): bits.append('ERROR ' + str(e['error']))
     print('  ' + '; '.join(str(b) for b in bits))
 st=(d.get('state') or {})
-print(f\"  now: eef {st.get('eef_pos')}, aperture {round(1000*float(st.get('gripper_width') or 0),1)} mm, resets left {st.get('resets_left')}, policy steps left {st.get('policy_steps_left')} of {st.get('policy_steps_max')} (hand-backs come out of these)\")" "$EX")
+print(f\"  now: eef {st.get('eef_pos')}, aperture {round(1000*float(st.get('gripper_width') or 0),1)} mm, resets left {st.get('resets_left')}, policy steps left {st.get('policy_steps_left')} of {st.get('policy_steps_max')} (your own steps come out of these too)\")" "$EX")
         fi
         if [ "$R" -ge "$PLAN_ROUNDS" ] || [ "${NLEFT:-0}" = "0" ] && [ "$SR" = "plan_complete" ]; then TAIL_HINT="This was your last segment; finish now."; else TAIL_HINT="You may send one more segment if the repair is not finished."; fi
         if [ "$FAMILY" = robotwin ]; then
@@ -2027,19 +2039,33 @@ attempt the object really is unreachable, say giveup and name what makes it so."
             # each step's result, the hand's final state and its own verdicts, and require it to change based on them (user 2026-09-19: without a
             # record of failures it never learns and just repeats the same moves). The sim side also has a gate that rejects a plan identical to a failed attempt.
             LEDGER=$(python3 $P/recovery_explore/cli/attempt_ledger.py "$CD" "$W" "$ATT" 2>/dev/null)
+            # The rewind restores the scene, not the episode clock (the judge's own steps are charged):
+            # the window-start telemetry's "Policy steps used so far" line would be stale, so it gets
+            # the clock as reset-window reports it now. Anything unparsable leaves $TEL as is.
+            TEL_NOW=$(printf '%s' "$TEL" | python3 -c "
+import json,re,sys
+tel=sys.stdin.read()
+try:
+    c=json.loads(sys.argv[1]); u,m=int(c['policy_steps_used']),int(c['policy_steps_max'])
+    tel=re.sub(r'^Policy steps used so far: \d+ of \d+ \(\d+ left',
+               f'Policy steps used so far: {u} of {m} ({max(0,m-u)} left',tel,count=1,flags=re.M)
+except Exception: pass
+sys.stdout.write(tel)" "$RW" 2>/dev/null) || TEL_NOW=$TEL
+            [ -n "$TEL_NOW" ] || TEL_NOW=$TEL
             cat > "$CD/p_replan_w${W}_a$ATT.txt" << PEOF
-You said it was not fixed. The simulator is back at the state this intervention
-started from, every action you took is undone, and your budget is $INTERVENE_BUDGET
-actions again. This is attempt $ATT; $LEFT resets left this episode.
+You said it was not fixed. The scene is back at the state this intervention
+started from and every action you took is undone, but the episode steps they used
+stay used; your budget is $INTERVENE_BUDGET actions again.
+This is attempt $ATT; $LEFT resets left this episode.
 
 $LEDGER
 
 Change at least one thing based on what the attempts above taught you; never repeat one verbatim.
 If what you saw means the policy should simply be left alone from here, answer
 {"result": "fixed", "note": "...", "plan": []}: the scene is exactly as you took it
-over, and that hands it back untouched.
+over, and that hands the scene back untouched.
 
-$TEL
+$TEL_NOW
 
 $MEMI
 

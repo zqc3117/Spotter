@@ -510,13 +510,14 @@ def main() -> None:
             # keep this line LAST among the pose lines and its wording unchanged: judge_driver_v7.sh
             # greps the last "End-effector is now at [...]" for the re-stage point.
             lines.append(f'End-effector is now at {tel.get("eef_now")}, aperture {tel.get("width_mm")} mm.')
-            # Policy step clock. Chunks handed back to the policy are deducted from it (16 steps per chunk); the model's own
-            # move_to / nudge are not. Without the number, the model treated hand-backs as free probes and four cells ended at the step limit.
+            # Step clock. Chunks handed back to the policy (16 steps per chunk) and every step of the model's own
+            # move_to / nudge etc. are deducted from it (env_service._raw_step). Without the number, the model treated
+            # hand-backs as free probes and four cells ended at the step limit.
             _ct, _mx = r.get("committed_timestep"), r.get("max_steps")
             if _ct is not None and _mx:
                 lines.append(f"Policy steps used so far: {int(_ct)} of {int(_mx)} ({max(0, int(_mx) - int(_ct))} left; "
-                             f"one chunk is 16 steps). Chunks you hand back with a policy step come out of these; "
-                             f"your own moves do not.")
+                             f"one chunk is 16 steps). Every step of the episode comes out of these, "
+                             f"your own moves included.")
             tp = out / "telemetry.txt"
             tp.write_text("\n".join(lines) + "\n")
             r["telemetry_file"] = str(tp.resolve())
