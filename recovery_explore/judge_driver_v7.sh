@@ -117,7 +117,7 @@ MAX_RESETS=${MAX_RESETS:-5}
 # both arms run the same file and the same prompt, differing only in whether the screener runs first.
 SCREEN=${SCREEN:-0}; SCREENER_HOST=${SCREENER_HOST:-127.0.0.1}
 # Round three switched to opus 5: round-two interventions could not tell "which moment needs fixing", and judging was too conservative.
-JUDGE_DEADLINE=600; ACT_DEADLINE=1500
+JUDGE_DEADLINE=${JUDGE_DEADLINE:-600}; ACT_DEADLINE=${ACT_DEADLINE:-1500}   # per-call deadlines (s); RoboTwin thinking runs raise JUDGE_DEADLINE
 # Qwen thinking: the screener and the window verdict never think; the repair turns of an intervention
 # (exec rounds, push, replan, repeat) think when QWEN_REPAIR_THINK=1, up to QWEN_THINK_BUDGET (2000) tokens
 # (cli/qwen_call.py). QWEN_REPAIR_THINK=0 is the paper's setting: no call thinks.
@@ -1396,7 +1396,7 @@ print(json.dumps(l))")
       # row count are passed separately.
       SCR=$(SCREEN_TASK_NAME="$TASK" SCREEN_RULE_ROWS=$((WINDOW+1)) python3 $P/recovery_explore/cli/screen_window.py \
         --montage "$MONT" --telemetry "$TELF" --task "$INSTR" \
-        --prev-flags "$SFLAGS" --host "$SCREENER_HOST" --tag "w$W" \
+        --prev-flags "$SFLAGS" --host "$SCREENER_HOST" --tag "w$W" --family "$FAMILY" \
         --out "$CD/screen_w$W.json" 2>>$OUT/lane$LANE/driver.log | tail -1)
       # In async mode the policy may finish the task while the screener runs; if so, do not ask the judge.
       if [ "$ASYNC" != 0 ] && [ -f "$CD/async/success" ]; then

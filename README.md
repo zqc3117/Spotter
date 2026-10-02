@@ -84,6 +84,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 - [Model Preparation](#-model-preparation)
 - [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
 - [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints)
+- [RoboTwin 2.0](#-robotwin-20)
 - [Reproducing the Paper](#-reproducing-the-paper)
 - [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
@@ -98,8 +99,11 @@ Spotter/
 ├── recovery_explore/                 # Spotter itself
 │   ├── judge_driver_v7.sh            # supervision loop for one lane: screen -> judge -> repair -> verify
 │   ├── env_service.py                # RoboCasa simulation service (RPC), started by launch_svc.sh
+│   ├── env_service_robotwin.py       # RoboTwin 2.0 simulation service (same RPC surface, SAPIEN)
+│   ├── robotwin_intervention.py      # RoboTwin repair primitives (dual arm); robodojo_intervention.py is its base
+│   ├── robotwin_policy_server.py     # RoboTwin pi0.5 policy server (openpi websocket protocol)
 │   ├── primitives.py                 # motion primitives the judge composes repairs from
-│   ├── JUDGE_BRIEF_V7.md             # judge prompt; BRIEF_PNP.md / BRIEF_MECH.md add task-family notes
+│   ├── JUDGE_BRIEF_V7.md             # judge prompt; BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md add task-family notes
 │   ├── cli/                          # screener, judge channels (Qwen / GPT), harness, few-shot tools
 │   ├── memory_bank/                  # frozen library of 77 general lessons
 │   ├── episode_sets/                 # sall500.txt (paper, 1,200 episodes) · s500q96.txt (96, debugging)
@@ -187,7 +191,20 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 | `episode_sets/s500q96.txt` | 96 | debugging subset, 4 episodes per task |
 
 Lessons and worked examples were learned on seed 195, disjoint from the test seed.
-**RoboTwin 2.0 and the real-robot experiments** are not included in this release.
+
+**RoboTwin 2.0** (dual-arm tabletop, SAPIEN) is supported as a third policy family; see [RoboTwin 2.0](#-robotwin-20).
+Its episode sets ship too:
+
+| File | Episodes | Use |
+|---|---:|---|
+| `episode_sets/rt50x5q.txt` | 250 | RoboTwin evaluation: 50 tasks × 5 episodes (indices 30–47 of the demo_randomized seed-0 cache) |
+| `episode_sets/rt50x10n.txt` | 500 | the 50 × 10 pool rt50x5q was drawn from |
+| `episode_sets/rt_ctlcheck12.txt` | 12 | control reproduction check (6 known successes, 6 known failures) |
+| `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | expert-checked RoboTwin seeds per task (the scene an episode index maps to) |
+
+The RoboTwin lessons (`memory_bank_robotwin_noreset/`) and worked examples (`fewshot_bank/robotwin/`, in the example
+bank archive) come from episode indices 0, 20, 21 and 50, disjoint from the test indices.
+**The real-robot experiments** are not included in this release.
 
 ## 🚀 Evaluation with Released Checkpoints
 
@@ -258,6 +275,60 @@ ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
 The driver starts and restarts the simulation service on port `8450+lane` by itself. All lanes of a run
 claim episodes from the same queue, and each lane stops once the run has `TARGET` results.
 </details>
+
+## 🤖 RoboTwin 2.0
+
+The same screener → judge → repair loop runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+(aloha-agilex dual arm, SAPIEN 3, 50 tasks, `demo_randomized` scenes) with the pi0.5 checkpoint
+[motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2). The family is `robotwin`:
+
+```bash
+bash spotter.sh judge --gpus 0,1,2,3                 # Qwen, as for RoboCasa
+bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
+bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35, control + Spotter
+bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode evaluation (1-shot setting)
+```
+
+**Runtime.** RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
+laid out as a *portable runtime* that `env/env.sh` points at with `ROBOTWIN_RUNTIME`:
+
+```text
+<ROBOTWIN_RUNTIME>/
+├── .venv/                                   # python 3.10: sapien 3.0.0b1, mplib 0.2.1, toppra, torch (CUDA build matching your GPU)
+└── worktree/third_party/RoboTwin/           # the RoboTwin 2.0 tree
+    ├── envs/curobo/src/                     # cuRobo sources (on the PYTHONPATH; its CUDA kernels must match your torch)
+    ├── assets/{objects,background_texture,embodiments}/   # RoboTwin 2.0 assets (TianxingChen/RoboTwin2.0 on the Hub)
+    └── policy/pi05/                         # RoboTwin's pi0.5 adapter; checkpoints under policy/pi0/checkpoints/<train_config>/<name>/<step>
+```
+
+Install RoboTwin 2.0 and its assets as its README says, point `ROBOTWIN_RUNTIME` (or `ROBOTWIN_ROOT` + `ROBOTWIN_PY`) at
+them, and give `ROBOTWIN_POLICY_PYTHON` a venv that satisfies `policy/pi05/requirements.txt` (openpi, lerobot < 0.3 and
+the patched transformers it needs) with the checkpoint extracted under `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000`
+(`ROBOTWIN_MODEL_NAME` / `ROBOTWIN_CKPT_ID`). The simulation service renders with SAPIEN's ray tracer on an
+RTX-class GPU (Vulkan); on RTX 5090 the `optix` denoiser is used because the default `oidn` fails there.
+
+**What the family changes.** Everything in `spotter.sh run robotwin` is the RoboTwin setting of the paper's experiments:
+2 chunks per judge window, the last 10 chunks of action history in the telemetry, 5 interventions per episode, the step
+budget × 1.8, no rollbacks, Qwen history of 10 turns with compaction at 40k tokens, and RoboTwin's own lesson bank
+(`memory_bank_robotwin_noreset/`). The screener's empty-grasp rule is recomputed from the gripper openings
+(RoboTwin reports a normalised opening, not a finger gap), the repair primitives are the dual-arm set of
+`robotwin_intervention.py`, and the judge sees three cameras (head + two wrists) per chunk. The scene of an episode is
+fixed by the shipped seed cache: episode index *k* of a task is its *k*-th expert-checked seed, so control and
+Spotter, and any two runs, see the same scene for the same `TASK:0:k`.
+
+| Setting | RoboTwin value |
+|---|---:|
+| `FAMILY_OVERRIDE` / policy port | `robotwin` / `9100` |
+| `WINDOW` / `RT_TEL_CHUNKS` | `2` / `10` |
+| `MAX_INTERVENTIONS` | `5` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | `10` / `40000` |
+| `ROBOTWIN_TASK_CONFIG` | `demo_randomized` |
+| `JUDGE_DEADLINE` / `ACT_DEADLINE` | `1200` / `2400` s per call |
+| `RT_MEMORY_BANK` | `memory_bank_robotwin_noreset` (`RT_MEMORY=0` disables lessons) |
+
+Results pair by cell exactly as on RoboCasa (`results.jsonl`, `bash spotter.sh summary`). A `--arm ctrl` run of the same
+set gives the policy-only baseline; the environment matters for that baseline, so compare against a control run made on
+the same machine, not against numbers from another installation.
 
 ## 📊 Reproducing the Paper
 
