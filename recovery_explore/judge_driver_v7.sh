@@ -1360,7 +1360,10 @@ print(json.dumps(l))")
     # Only the flag field counts here, and a missing one is treated as true -- a pass must be the screener's explicit answer, never a default.
     if [ "$SCREEN" = 1 ] && [ -n "$TELF" ] && [ -n "$MONT" ]; then
       # stderr goes to driver.log instead of being discarded -- that is where screener config errors used to be swallowed.
-      SCR=$(python3 $P/recovery_explore/cli/screen_window.py \
+      # The screener's empty-closure rule applies to PnP* tasks only and reads this window's
+      # chunks plus the one before; --task carries the instruction, so the task name and the
+      # row count are passed separately.
+      SCR=$(SCREEN_TASK_NAME="$TASK" SCREEN_RULE_ROWS=$((WINDOW+1)) python3 $P/recovery_explore/cli/screen_window.py \
         --montage "$MONT" --telemetry "$TELF" --task "$INSTR" \
         --prev-flags "$SFLAGS" --host "$SCREENER_HOST" --tag "w$W" \
         --out "$CD/screen_w$W.json" 2>>$OUT/lane$LANE/driver.log | tail -1)

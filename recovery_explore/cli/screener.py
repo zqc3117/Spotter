@@ -5,7 +5,10 @@ Local screener client. Pure standard library; import it directly with python3 on
     r = screen(image_bytes, telemetry_text, task="PnPCounterToCab")
     r -> {"flag": bool, "risk": int, "rule_hit": bool, "why": str, "port": int, "dt": float}
 
-flag = rule_hit or risk >= THRESHOLD. rule_hit means "some chunk in this window has an aperture < 12 mm".
+flag = rule_hit or risk >= THRESHOLD. rule_hit means "some chunk in this window has an aperture < 12 mm",
+on PnP* tasks only, read from the width(mm) column of the newest SCREEN_RULE_ROWS telemetry rows (default 3).
+The task name comes from SCREEN_TASK_NAME (judge_driver_v7.sh sets it when it calls screen_window.py);
+without it, the task argument itself is checked for a PnP* name.
 If flag is true the window goes to Opus; if false the VLA keeps going.
 """
 import base64, json, re, time, urllib.request, itertools, threading
@@ -67,15 +70,41 @@ WHY: <one short sentence>"""
 
 # ---- rule ----------------------------------------------------------------
 _ROW = re.compile(r"^\d+\s+\d+-\d+\s+.*?([\d.]+)\s*$", re.M)
+# cli/harness.py prints bracketed columns after width(mm) (hand xyz, wrist rpy), so the row's
+# last token is not the width. With the bracketed fields removed a row reads
+# "chunk steps grip_cmd travelled width", so the width is field 4. The rule reads the newest rows
+# only, this window's chunks plus the last one before it, so a closure many chunks back does not
+# fire it. judge_driver_v7.sh passes SCREEN_RULE_ROWS=WINDOW+1; without it the rule reads RULE_ROWS.
+RULE_ROWS = 3
+_BRACKETED = re.compile(r"\[[^\]]*\]")
+_WIDTH_FIELD = 4
+
+
+def _is_pnp(task: str = "") -> bool:
+    """Only pick-and-place (PnP*) tasks use the rule; mechanism and coffee tasks do not."""
+    name = _os.environ.get("SCREEN_TASK_NAME") or str(task or "")
+    return name.startswith("PnP")
+
+
+def _rule_rows() -> int:
+    """How many of the newest table rows the rule reads (SCREEN_RULE_ROWS, else RULE_ROWS)."""
+    try:
+        return max(1, int(_os.environ.get("SCREEN_RULE_ROWS") or RULE_ROWS))
+    except ValueError:
+        return RULE_ROWS
+
+
 def rule_hit(telemetry_text: str, task: str = "") -> bool:
-    """Any chunk in the telemetry table has width(mm) < 12."""
-    for line in telemetry_text.splitlines():
-        if re.match(r"^\d+\s+\d+-\d+", line):
-            try:
-                if float(line.split()[-1]) < (4.0 if "Mug" in (task or "") else EMPTY_MM):   # mug-handle grasps read 6-12 mm, so for mug tasks only below 4 mm counts as empty
-                    return True
-            except ValueError:
-                pass
+    """PnP* tasks: some width(mm) among the newest _rule_rows() chunks of the table is < 12. Other tasks: always False."""
+    if not _is_pnp(task):
+        return False
+    rows = [line for line in telemetry_text.splitlines() if re.match(r"^\d+\s+\d+-\d+", line)]
+    for line in rows[-_rule_rows():]:
+        try:
+            if float(_BRACKETED.sub(" ", line).split()[_WIDTH_FIELD]) < (4.0 if "Mug" in (task or "") else EMPTY_MM):   # mug-handle grasps read 6-12 mm, so for mug tasks only below 4 mm counts as empty
+                return True
+        except (ValueError, IndexError):
+            pass
     return False
 
 # ---- call ----------------------------------------------------------------
