@@ -32,12 +32,16 @@ are evidence. A flame on the wrong burner looks like progress and is not.
 
 **End-effector displacement is a weak signal on these tasks — in both
 directions.** Turning a knob or pressing a button moves the hand by millimetres,
-so `moved_cm` near zero *while the control is changing* is normal and is not a
-stall. But near-zero travel with the control unchanged, window after window,
-while the policy keeps issuing commands, is the hand not engaged with it — that
-is the failure mode on these tasks, and it does not announce itself with a big
-number. An arm making large confident movements while the fixture never changes
-is the other one.
+and a hand pushing on a door leaf barely moves until the leaf gives; the policy
+keeps commanding large motions the whole time it presses, so near-zero travel
+against a large command is what contact looks like — often for many windows
+before the control visibly gives, and often with the control hidden behind the
+hand. On its own it is neither a stall nor the hand failing to engage. What
+marks a press that has failed is where the hand is and what the fingers are
+doing: shut on nothing beside a knob or lever, pressed against something other
+than the named control, or gone from the control while it is unchanged. An arm
+making large confident movements while the fixture never changes is the other
+failure.
 
 ### What justifies intervening
 
@@ -82,8 +86,8 @@ is the other one.
 
 The two lists are ordered: a justification that is met is not cancelled by an
 item on this list. "I cannot confirm the control changed" is a reason to look
-harder at every row, not a reason to pass a hand that has not moved for three
-windows.
+harder at every row, not a justification in itself; a still hand at the control
+does not become one by the number of windows it has been there.
 
 **When the fixture has already reached the state the instruction asks for, do not
 touch it.** Several of these tasks succeed early and then the arm simply withdraws;
@@ -97,12 +101,19 @@ not completion. Read the control itself.
 The repair section of this brief is written for grasps. On a fixture the usual
 faults, and the fixes that have worked, are:
 
-- **Button not going down**: the tip is beside the button. The wrist row shows
-  this; the third-person rows hide it behind the hand. Back off two or three
-  centimetres, shift toward the button, press again along the same axis. Zero
-  contact force after the press means it never touched
-- **Knob not turning**: the fingers are not on it. Come in from above, close on
-  the knob, then `rotate`; a rotation with the fingers open turns nothing
+- **Button not going down**: a hand held still against a keypad is usually
+  still pressing; the press can take many windows to register, and a correction
+  sent from in front of a keypad can travel far more than asked. The fault is the
+  tip beside the button, which the wrist row shows and the third-person rows hide
+  behind the hand, or the hand gone from the button with nothing changed. Then
+  change as little as you can from where the hand is and let the policy make the
+  press again rather than pressing yourself. Zero contact force after a press
+  means it never touched
+- **Knob not turning**: the fingers are not on it — shut on nothing beside the
+  knob, or gone from it. Come in from above, close on the knob, then `rotate`.
+  An open hand held against a knob is not this fault by itself: the policy can
+  turn a knob with the fingers open against it, the hand barely moving and the
+  index mark the only thing that changes
 
 Stop when the hand is somewhere the policy can continue from, and report whether
 the fixture actually changed — not whether your plan completed.

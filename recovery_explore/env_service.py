@@ -195,6 +195,16 @@ _BLOWUP_MOVE_TO_MAX_M = 0.06     # in these tasks move_to is short-range only (l
 _FAULT_STOPS = ("servo_missed", "overshoot", "move_clipped")
 
 
+class EpisodeStepBudgetExhausted(RuntimeError):
+    """The episode's step clock is at its budget while a judge window is charging it.
+
+    Raised by ``_raw_step`` BEFORE the step that would take the episode past
+    ``max_steps``, so the judge's own moves never run the episode longer than the
+    policy alone may run it. The message contains "budget": ``execute_plan`` maps
+    such an exception to stop_reason "budget".
+    """
+
+
 def _repair_gate_check(task: str, plan, policy_chunks_so_far: int, faults_this_window: int,
                        eef_pos=None, resolve_xyz=None):
     """Return (step_index, message) to reject the whole plan; None to accept it.
@@ -364,8 +374,16 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         self._judge_locked: bool = False
         self._judge_token: str | None = None
         # judge experiment: call_cosmos is disabled during interventions. Allowing it would give the treatment arm free extra
-        # policy steps (call_cosmos does not count against the episode step budget), making the comparison with the control arm unfair.
+        # policy steps (call_cosmos does not advance the episode's step clock itself; each step in a window is counted by
+        # _raw_step, but it is still a policy call off the seed schedule), making the comparison with the control arm unfair.
         self._allow_cosmos: bool = True
+        # While a judge window is open on a harness episode, every simulator step is charged to
+        # that episode's step clock, the judge's own moves included (see _raw_step).
+        # harness_open_action_budget turns it on and close turns it off. It stays on through the
+        # policy op of execute_plan: harness_advance advances the same clock step by step and
+        # writes back the same total, so nothing is counted twice. The control arm never opens a
+        # window, so its behaviour is unchanged.
+        self._charge_clock: bool = False
         self._restored: snapshot_bridge.RestoredAnchor | None = None
         self._raw_obs: Mapping[str, Any] | None = None
         self._policy_obs: Mapping[str, np.ndarray] | None = None
@@ -621,15 +639,42 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         self._raw_obs = raw
         self._policy_obs = prepare_observation(raw, self._cfg.flip_images)
 
+    def _episode_steps_left(self) -> int | None:
+        """Steps left on the episode's clock (the budget harness_advance enforces); None without one."""
+        ep = self._episode
+        if not ep:
+            return None
+        budget = int(ep.get("max_steps") or self._task_max_steps(str(ep["task"])))
+        return budget - int(ep["failure_committed_timestep"])
+
     def _raw_step(self, flat_action: np.ndarray) -> Any:
-        """Step the env with an ALREADY env-dimensioned action, keeping caches."""
+        """Step the env with an ALREADY env-dimensioned action, keeping caches.
+
+        While a judge window charges the clock (``_charge_clock``), the step is also
+        one step of the episode, exactly like a policy step in harness_advance, and
+        it is refused once the episode's step budget is used up.
+        """
         from rpc.run_remote_robocasa_collect import prepare_observation
 
         env = self._require_env()
+        charge = bool(self._charge_clock) and self._episode is not None
+        if charge:
+            left = self._episode_steps_left()
+            if left is not None and left <= 0:
+                ep = self._episode
+                raise EpisodeStepBudgetExhausted(
+                    f"the episode's step budget is used up ({int(ep['failure_committed_timestep'])} of "
+                    f"{int(ep['failure_committed_timestep']) + left} steps, your own moves included); "
+                    "nothing more can run in this episode")
         raw, _reward, _done, _info = env.step(np.asarray(flat_action, dtype=np.float64))
         self._raw_obs = raw
         self._policy_obs = prepare_observation(raw, self._cfg.flip_images)
         self._step_count += 1
+        if charge:
+            ep = self._episode
+            ep["failure_committed_timestep"] = int(ep["failure_committed_timestep"]) + 1
+            # harness_advance keeps these two equal at the end of every call; so does this.
+            self._failure_origin_timestep = int(ep["failure_committed_timestep"])
         return raw
 
     def _primitive_driver(self) -> RecoveryPrimitives:
@@ -999,7 +1044,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 "note": "rewound to the start of this intervention; action budget refilled",
                 "actions_budget": int(self._round_budget), "actions_used": 0,
                 "resets_used": int(self._resets_used),
-                "resets_left": int(MAX_RESETS - self._resets_used)}
+                "resets_left": int(MAX_RESETS - self._resets_used),
+                # the episode clock is not rewound: the driver prints these in the replan prompt
+                **self._policy_clock()}
 
     def _spend_action(self, name: str) -> None:
         """Charge one model-side action against the current round budget (if any)."""
@@ -1031,6 +1078,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         self._resets_this_window = 0
         self._last_action_poses = None
         self._window_snapshot = None
+        # From here until close, every step the judge takes is a step of the episode.
+        self._charge_clock = self._episode is not None
         from . import failure_factory as ff
         ep = self._episode or {}
         try:
@@ -1172,6 +1221,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         used = self._round_used
         self._round_token = None
         self._round_budget = 0
+        self._charge_clock = False
         self._allow_cosmos = True
         resets = self._resets_this_window
         self._resets_this_window = 0
@@ -1780,7 +1830,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         state plus three-camera renders at the moment it stopped. From these the model decides whether to continue, replan, or finish.
 
         Abort conditions (stop on any; remaining steps are returned unchanged):
-          * ``budget``      -- action budget exhausted
+          * ``budget``      -- action budget exhausted, or the episode's step budget is used up (the judge's
+                               own steps count too, see _raw_step; it stops before the step that would cross it)
           * ``closed_empty``-- gripper aperture below GRIP_EMPTY_W after closing, i.e. it grasped air;
                                later steps written assuming "already holding" are all meaningless
           * ``servo_missed``-- the move_to / lift servo did not get within tolerance (primitives' ok=False)
@@ -1832,8 +1883,15 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 log.append({"step": i, "op": op,
                             "error": f"unknown op; allowed: {sorted(self._PLAN_OPS)}"})
                 break
+            left = self._episode_steps_left() if self._charge_clock else None
+            if left is not None and left <= 0:
+                stop_reason, stopped_at = "budget", i
+                log.append({"step": i, "op": op,
+                            "error": "not run: the episode's step budget is used up, your own moves included"})
+                break
             eef_before = [float(v) for v in np.asarray(self._obs_value("robot0_eef_pos"))]
             entry: dict[str, Any] = {"step": i, "op": op, "eef_before": [round(v, 4) for v in eef_before]}
+            steps_before = int(self._step_count)
             try:
                 grip = raw.get("gripper", "hold")
                 if op == "move_to":
@@ -1868,6 +1926,11 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                         stop_reason, stopped_at = "budget", i
                         entry["error"] = "no budget left for a policy step"
                         log.append(entry); break
+                    # The charge stays on: _raw_step counts each policy step as it runs and
+                    # harness_advance writes back the same total at its end (no double count). A
+                    # hand-back that raises part-way (policy server 500, render error) keeps the
+                    # steps it ran charged. Its limit min(horizon, budget - committed) keeps it
+                    # inside the budget, so _raw_step's refusal never fires in here.
                     adv = self.harness_advance(num_chunks=n, frame_size=128)
                     self._round_used += n
                     self._round_policy_chunks = used_pc + n
@@ -1887,8 +1950,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                     state = str(raw.get("state") or raw.get("action") or "close")
                     res = self.gripper(action=state)
                     entry["state"] = state
-            except Exception as exc:  # also reached when the budget is spent (_spend_action raises RuntimeError)
+            except Exception as exc:  # also reached when a budget is spent (_spend_action raises RuntimeError, _raw_step EpisodeStepBudgetExhausted)
                 entry["error"] = f"{type(exc).__name__}: {exc}"
+                entry["sim_steps"] = int(self._step_count) - steps_before
                 log.append(entry)
                 stopped_at = i
                 stop_reason = "budget" if "budget" in str(exc).lower() else "error"
@@ -1905,6 +1969,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 "servo_ok": bool(res.get("ok", True)),
                 "final_dist_m": (round(float(res["final_dist"]), 4) if res.get("final_dist") is not None else None),
                 "actions_used": int(self._round_used),
+                # simulator steps this step took; in a judge window each of them came off the episode clock
+                "sim_steps": int(self._step_count) - steps_before,
             })
             if res.get("clipped_to_m") is not None:
                 entry["clipped_to_m"] = res["clipped_to_m"]
@@ -1927,6 +1993,11 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             log.append(entry)
 
             # --- Abort conditions, hardest to softest ---
+            # The episode's step budget is used up (the judge's own steps count too): nothing more can run.
+            left = self._episode_steps_left() if self._charge_clock else None
+            if left is not None and left <= 0:
+                stop_reason, stopped_at = "budget", i
+                break
             if op == "gripper" and entry["state"] == "close" and width < _grip_empty_w_for(self._current_task()):
                 stop_reason, stopped_at = "closed_empty", i
                 break
@@ -2756,9 +2827,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
 
         instruction = str(self._env.get_ep_meta().get("lang") or "")
         horizon = int(self._cosmos_config().num_open_loop_steps)
-        # ``max_steps_extra`` gives the control arm the sim steps the treatment arm gets for free during interventions. Intervention actions
-        # only add to _step_count, not the episode clock; the t1 batch measured a median of 343 extra steps per episode
-        # (mean 831); without compensating, the success-rate difference would include "ran a few hundred more steps".
+        # ``max_steps_extra`` adds a few steps beyond the task's step limit (default 0). Every step in a judge window is
+        # counted on the episode clock (_raw_step / _charge_clock), so the treatment arm gets no free sim steps and the
+        # control arm needs no compensation.
         max_steps = self._task_max_steps(task) + max(0, int(max_steps_extra))
         self._episode = {
             "task": str(task),
@@ -2778,6 +2849,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         self._grasp_events = []
         self._waypoints = []
         self._window_snapshot = None
+        self._charge_clock = False
         self._resets_used = 0
         self._resets_this_window = 0
         self._collateral_log = []
@@ -3042,7 +3114,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         not shorten the treatment arm's runway relative to the control arm's.
         Charging the intervention to the episode budget would make the comparison
         measure "how many steps did the explorer waste" instead of "did the
-        intervention help".
+        intervention help". (The judge experiment is the exception: a window opened
+        by harness_open_action_budget on a harness_episode_begin episode charges
+        every step the judge takes to that episode's clock, see ``_raw_step``.)
 
         This is the measurement that answers "did the intervention actually
         rescue the episode".
