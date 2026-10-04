@@ -237,6 +237,9 @@ bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # 250 集评测（1
 结果与 RoboCasa 一样按格配对（`results.jsonl`，`bash spotter.sh summary`）。同一评测集的 `--arm ctrl` 给出纯策略基线；
 基线受环境影响，请与同一台机器上跑出的对照比较，不要与别处的数字比较。
 
+**参考结果**（本代码，`rt50x5q`，1-shot，本地 Qwen3.8-27B-FP8，修法回合思考，不回档；250 格中 248 格，2 格种子在评测机上不稳定）：
+纯策略 117/248 = 47.2%，Spotter 124/248 = 50.0%（救回 40 集、损失 33 集，93 集至少介入一次）。
+
 ## 🚀 用发布的权重评测
 
 每个服务各开一个终端，先执行 `source env/env.sh`。

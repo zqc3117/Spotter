@@ -330,6 +330,10 @@ Results pair by cell exactly as on RoboCasa (`results.jsonl`, `bash spotter.sh s
 set gives the policy-only baseline; the environment matters for that baseline, so compare against a control run made on
 the same machine, not against numbers from another installation.
 
+**Reference run** (this code, `rt50x5q`, 1-shot, local Qwen3.8-27B-FP8, repair turns thinking, no rollbacks; 248 of the
+250 cells, two seeds were unstable on the evaluation machine): policy only 117/248 = 47.2%, Spotter 124/248 = 50.0%
+(40 episodes rescued, 33 lost, 93 episodes with at least one intervention).
+
 ## 📊 Reproducing the Paper
 
 The Spotter rows of Table 1 (RoboCasa, 1,200 episodes) are the full evaluation above with these settings;
