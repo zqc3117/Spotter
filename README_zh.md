@@ -20,7 +20,7 @@
 
 | 📄 论文 | 🏠 项目主页 | 🤖 模型权重 | 🌐 仿真器 | 🚀 上手 |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [安装](#1-环境) · [快速开始](#4-运行) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
@@ -73,6 +73,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 ## 📑 目录
 
+- [文件结构](#-文件结构)
 - [环境配置](#-环境配置)
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
@@ -82,6 +83,32 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [接入你自己的具身模型](#-接入你自己的具身模型)
 - [输出](#-输出) · [配置参考](#-配置参考)
 - [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
+
+## 📂 文件结构
+
+```text
+Spotter/
+├── spotter.sh                        # 统一入口：部署 Qwen / 策略服务、运行、汇总结果
+├── recovery_explore/                 # Spotter 本体
+│   ├── judge_driver_v7.sh            # 单个 lane 的监督循环：筛查 -> 判别 -> 修复 -> 验证
+│   ├── env_service.py                # RoboCasa 仿真服务（RPC），由 launch_svc.sh 启动
+│   ├── env_service_robotwin.py       # RoboTwin 2.0 仿真服务（同一套 RPC 接口，SAPIEN）
+│   ├── robotwin_intervention.py      # RoboTwin 修复原语（双臂）；robodojo_intervention.py 是它的基类
+│   ├── robotwin_policy_server.py     # RoboTwin 的 pi0.5 策略服务（openpi websocket 协议）
+│   ├── primitives.py                 # 判别器组合修复计划所用的运动原语
+│   ├── JUDGE_BRIEF_V7.md             # 判别器提示词；BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md 是分任务类型的补充
+│   ├── cli/                          # 筛子、判别通道（Qwen / GPT）、harness、few-shot 工具
+│   ├── memory_bank/                  # 冻结的 77 条通用经验（RoboCasa）
+│   ├── memory_bank_robotwin_noreset/ # RoboTwin 2.0 的经验
+│   ├── episode_sets/                 # sall500.txt（论文，1200 集）· s500q96.txt（96 集，调试用）· rt50x10n.txt（RoboTwin 2.0，500 集）
+│   ├── fewshot_bank/                 # （需下载）1-shot 设置用的示例；robotwin/ 子目录给 RoboTwin 2.0
+│   └── runs_<RUN>_<策略>/            # （运行时生成）results.jsonl、各 lane 日志、给判别器看的画面
+├── rpc/                              # π0.5 策略服务、RPC 协议、RoboCasa rollout 与采集脚本
+├── cf_bench/                         # 纠错能力实验用的快照与重放工具
+├── env/                              # env.sh.example、requirements-robocasa.txt、requirements-pi05.txt
+├── assets/                           # logo
+└── LICENSE · THIRD_PARTY_NOTICES.md · LICENSES/
+```
 
 ## 🔧 环境配置
 

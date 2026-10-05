@@ -20,7 +20,7 @@
 
 | 📄 Paper | 🏠 Project page | 🤖 Model checkpoints | 🌐 Simulator | 🚀 Get started |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#1-environments) · [Quick start](#4-run) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#-environment-setup) · [Quick start](#-evaluation-with-released-checkpoints) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter overview: the embodied model leads chunk by chunk, a faster VLM screens each chunk, and a frontier VLM judges and repairs only confirmed errors; with success rates and time per episode.">
@@ -79,6 +79,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 
 ## 📑 Index
 
+- [File Structure](#-file-structure)
 - [Environment Setup](#-environment-setup)
 - [Model Preparation](#-model-preparation)
 - [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
@@ -88,6 +89,32 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
 - [Outputs](#-outputs) · [Configuration Reference](#-configuration-reference)
 - [Acknowledgements](#-acknowledgements) · [License](#-license) · [Citation](#-citation)
+
+## 📂 File Structure
+
+```text
+Spotter/
+├── spotter.sh                        # one entry point: serve Qwen / the policy, run episodes, summarize
+├── recovery_explore/                 # Spotter itself
+│   ├── judge_driver_v7.sh            # supervision loop for one lane: screen -> judge -> repair -> verify
+│   ├── env_service.py                # RoboCasa simulation service (RPC), started by launch_svc.sh
+│   ├── env_service_robotwin.py       # RoboTwin 2.0 simulation service (same RPC surface, SAPIEN)
+│   ├── robotwin_intervention.py      # RoboTwin repair primitives (dual arm); robodojo_intervention.py is its base
+│   ├── robotwin_policy_server.py     # RoboTwin pi0.5 policy server (openpi websocket protocol)
+│   ├── primitives.py                 # motion primitives the judge composes repairs from
+│   ├── JUDGE_BRIEF_V7.md             # judge prompt; BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md add task-family notes
+│   ├── cli/                          # screener, judge channels (Qwen / GPT), harness, few-shot tools
+│   ├── memory_bank/                  # frozen library of 77 general lessons (RoboCasa)
+│   ├── memory_bank_robotwin_noreset/ # the RoboTwin 2.0 lessons
+│   ├── episode_sets/                 # sall500.txt (paper, 1,200 episodes) · s500q96.txt (96, debugging) · rt50x10n.txt (RoboTwin 2.0, 500)
+│   ├── fewshot_bank/                 # (downloaded) worked examples for the 1-shot setting; robotwin/ for RoboTwin 2.0
+│   └── runs_<RUN>_<family>/          # (generated) results.jsonl, per-lane logs, frames shown to the judge
+├── rpc/                              # π0.5 policy server, RPC protocol, RoboCasa rollout and collection scripts
+├── cf_bench/                         # snapshot and replay tools for the error-correction study
+├── env/                              # env.sh.example, requirements-robocasa.txt, requirements-pi05.txt
+├── assets/                           # logo
+└── LICENSE · THIRD_PARTY_NOTICES.md · LICENSES/
+```
 
 ## 🔧 Environment Setup
 
