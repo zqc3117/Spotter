@@ -20,7 +20,7 @@
 
 | 📄 Paper | 🏠 Project page | 🤖 Model checkpoints | 🌐 Simulator | 🚀 Get started |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#-environment-setup) · [Quick start](#-evaluation-with-released-checkpoints) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [Installation](#1-environments) · [Quick start](#4-run) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter overview: the embodied model leads chunk by chunk, a faster VLM screens each chunk, and a frontier VLM judges and repairs only confirmed errors; with success rates and time per episode.">
@@ -79,46 +79,26 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 
 ## 📑 Index
 
-- [File Structure](#-file-structure)
-- [Environment Setup](#-environment-setup)
-- [Model Preparation](#-model-preparation)
-- [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
-- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints)
-- [RoboTwin 2.0](#-robotwin-20)
-- [Reproducing the Paper](#-reproducing-the-paper)
-- [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
-- [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
-- [Outputs](#-outputs) · [Configuration Reference](#-configuration-reference)
+Spotter runs on two simulators with the same code; pick the one you need:
+
+| | RoboCasa | RoboTwin 2.0 |
+|---|---|---|
+| Robot / scenes | Franka, kitchens (24 tasks) | aloha-agilex dual arm, tabletop (50 tasks) |
+| Embodied models | π0.5, Cosmos Policy | π0.5 (motus-robotics/pi0.5_robotwin2) |
+| Judge / screener | local Qwen3.8-27B-FP8 (shared) | local Qwen3.8-27B-FP8 (shared) |
+| How to use | [RoboCasa](#-robocasa) | [RoboTwin 2.0](#-robotwin-20) |
+
+- [RoboCasa](#-robocasa): environments · weights · assets and episode sets · run
+- [RoboTwin 2.0](#-robotwin-20): runtime and weights · episode set and example bank · run
+- [Reproducing the Paper](#-reproducing-the-paper) · [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
+- [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model) · [Outputs](#-outputs) · [Configuration Reference](#-configuration-reference)
 - [Acknowledgements](#-acknowledgements) · [License](#-license) · [Citation](#-citation)
 
-## 📂 File Structure
+## 🏠 RoboCasa
 
-```text
-Spotter/
-├── spotter.sh                        # one entry point: serve Qwen / the policy, run episodes, summarize
-├── recovery_explore/                 # Spotter itself
-│   ├── judge_driver_v7.sh            # supervision loop for one lane: screen -> judge -> repair -> verify
-│   ├── env_service.py                # RoboCasa simulation service (RPC), started by launch_svc.sh
-│   ├── env_service_robotwin.py       # RoboTwin 2.0 simulation service (same RPC surface, SAPIEN)
-│   ├── robotwin_intervention.py      # RoboTwin repair primitives (dual arm); robodojo_intervention.py is its base
-│   ├── robotwin_policy_server.py     # RoboTwin pi0.5 policy server (openpi websocket protocol)
-│   ├── primitives.py                 # motion primitives the judge composes repairs from
-│   ├── JUDGE_BRIEF_V7.md             # judge prompt; BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md add task-family notes
-│   ├── cli/                          # screener, judge channels (Qwen / GPT), harness, few-shot tools
-│   ├── memory_bank/                  # frozen library of 77 general lessons
-│   ├── episode_sets/                 # sall500.txt (paper, 1,200 episodes) · s500q96.txt (96, debugging)
-│   ├── fewshot_bank/                 # (downloaded) worked examples for the 1-shot setting
-│   └── runs_<RUN>_<family>/          # (generated) results.jsonl, per-lane logs, frames shown to the judge
-├── rpc/                              # π0.5 policy server, RPC protocol, RoboCasa rollout and collection scripts
-├── cf_bench/                         # snapshot and replay tools for the error-correction study
-├── env/                              # env.sh.example, requirements-robocasa.txt, requirements-pi05.txt
-├── assets/                           # logo
-└── LICENSE · THIRD_PARTY_NOTICES.md · LICENSES/
-```
+Everything in this section is RoboCasa with π0.5 or Cosmos Policy.
 
-## 🔧 Environment Setup
-
-Spotter uses three Python environments:
+### 1. Environments
 
 | Environment | Python | Runs | Install |
 |---|---|---|---|
@@ -142,7 +122,7 @@ cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 
 > **Note.** Headless MuJoCo rendering needs an EGL-capable NVIDIA GPU (`MUJOCO_GL=egl`, set in `env/env.sh`).
 
-## 📦 Model Preparation
+### 2. Weights
 
 **1) Download the weights.**
 
@@ -179,7 +159,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 > **GPT judge (optional).** Set `ENGINE=api` together with `OPENAI_RESPONSES_URL` and `OPENAI_API_TOKEN_FILE`;
 > the judge becomes GPT-6 Astra while the screener stays the local Qwen.
 
-## 🧭 Simulator Assets and Episode Sets
+### 3. Assets and episode sets
 
 **RoboCasa assets** are installed by the Cosmos Policy RoboCasa setup above.
 
@@ -192,21 +172,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 
 Lessons and worked examples were learned on seed 195, disjoint from the test seed.
 
-**RoboTwin 2.0** (dual-arm tabletop, SAPIEN) is supported as a third policy family; see [RoboTwin 2.0](#-robotwin-20).
-Its episode sets ship too:
-
-| File | Episodes | Use |
-|---|---:|---|
-| `episode_sets/rt50x5q.txt` | 250 | RoboTwin evaluation: 50 tasks × 5 episodes (indices 30–47 of the demo_randomized seed-0 cache) |
-| `episode_sets/rt50x10n.txt` | 500 | the 50 × 10 pool rt50x5q was drawn from |
-| `episode_sets/rt_ctlcheck12.txt` | 12 | control reproduction check (6 known successes, 6 known failures) |
-| `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | expert-checked RoboTwin seeds per task (the scene an episode index maps to) |
-
-The RoboTwin lessons (`memory_bank_robotwin_noreset/`) ship with the repository; the worked examples for the 1-shot
-setting are a separate release archive (download command in [RoboTwin 2.0](#-robotwin-20)).
-**The real-robot experiments** are not included in this release.
-
-## 🚀 Evaluation with Released Checkpoints
+### 4. Run
 
 Each server runs in its own terminal after `source env/env.sh`.
 
@@ -282,7 +248,9 @@ Spotter also runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwi
 50 tasks, `demo_randomized` scenes) with the pi0.5 checkpoint
 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2). The family is `robotwin`.
 
-**1) Runtime.** RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
+### 1. Runtime and weights
+
+RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
 laid out as a *portable runtime* that `env/env.sh` points at:
 
 ```text
@@ -302,38 +270,29 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # a ven
 ```
 
 The simulation renders with SAPIEN's ray tracer (Vulkan, RTX-class GPU); on RTX 5090 the `optix` denoiser is used
-because the default `oidn` fails there. The expert-checked seeds that fix the scene of every episode index ship with the
-repository (`episode_sets/robotwin_seed_cache/`).
+because the default `oidn` fails there.
 
-**1-shot example bank (optional, 33 MB).** The RoboTwin worked examples are a separate release archive; it unpacks into
-`recovery_explore/fewshot_bank/robotwin/` next to the RoboCasa bank:
+### 2. Episode set and example bank
+
+The evaluation set is `episode_sets/rt50x10n.txt` (50 tasks × 10 episodes). For the 1-shot setting, download the
+RoboTwin example bank (33 MB) into `recovery_explore/fewshot_bank/robotwin/`:
 
 ```bash
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
 ```
 
-**2) Run.**
+### 3. Run
 
 ```bash
 bash spotter.sh judge --gpus 0,1,2,3                 # Qwen, as for RoboCasa
 bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
 bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35
-bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode set (1-shot)
-bash spotter.sh run robotwin rt50x5q --lanes 12 --arm ctrl   # the policy-only baseline on the same cells
+bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # the full set (1-shot)
+bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # the policy-only baseline on the same cells
 bash spotter.sh summary
 ```
 
-`spotter.sh run robotwin` applies the RoboTwin settings; every one can still be overridden through the environment:
-
-| Setting | RoboTwin value |
-|---|---:|
-| `FAMILY_OVERRIDE` / policy port | `robotwin` / `9100` |
-| `WINDOW` / `RT_TEL_CHUNKS` | `2` / `10` |
-| `MAX_INTERVENTIONS` | `5` |
-| `QWEN_KEEP_TURNS` / `COMPACT_AT` | `10` / `40000` |
-| `ROBOTWIN_TASK_CONFIG` | `demo_randomized` |
-| `JUDGE_DEADLINE` / `ACT_DEADLINE` | `1200` / `2400` s per call |
-| `RT_MEMORY_BANK` | `memory_bank_robotwin_noreset` (`RT_MEMORY=0` disables lessons) |
+`spotter.sh run robotwin` applies the RoboTwin column of the [Configuration Reference](#-configuration-reference); every setting can still be overridden through the environment.
 
 ## 📊 Reproducing the Paper
 
@@ -422,14 +381,16 @@ bash spotter.sh summary pi05_sall500
 
 ## 🧩 Configuration Reference
 
-| Setting | Cosmos | pi0.5 |
-|---|---:|---:|
-| `FAMILY_OVERRIDE` | `cosmos` | `pi05` |
-| Steps per chunk | 16 | 25 |
-| `WINDOW` (judge window, in chunks) | 2 | 1 |
-| `TEL_CHUNKS` | 40 | 10 |
-| Policy port | 8800 | 8900 |
-| Policy server | `python -m rpc.server` (upstream Cosmos Policy) | `python -m rpc.policy_server_pi05` |
+| Setting | RoboCasa · Cosmos | RoboCasa · pi0.5 | RoboTwin 2.0 · pi0.5 |
+|---|---:|---:|---:|
+| `FAMILY_OVERRIDE` | `cosmos` | `pi05` | `robotwin` |
+| Steps per chunk | 16 | 25 | 16 |
+| `WINDOW` (judge window, in chunks) | 2 | 1 | 2 |
+| `TEL_CHUNKS` / `RT_TEL_CHUNKS` | 40 | 10 | 10 |
+| `MAX_INTERVENTIONS` | 8 | 8 | 5 |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | 20 / 110000 | 20 / 110000 | 10 / 40000 |
+| Policy port | 8800 | 8900 | 9100 |
+| Policy server | `python -m rpc.server` (upstream Cosmos Policy) | `python -m rpc.policy_server_pi05` | `recovery_explore/robotwin_policy_server.py` |
 
 | Parameter | Paper value | Purpose |
 |---|---:|---|
