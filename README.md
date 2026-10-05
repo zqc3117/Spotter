@@ -203,7 +203,7 @@ Its episode sets ship too:
 | `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | expert-checked RoboTwin seeds per task (the scene an episode index maps to) |
 
 The RoboTwin lessons (`memory_bank_robotwin_noreset/`) ship with the repository; the worked examples for the 1-shot
-setting are the separate archive `fewshot_bank_robotwin.tar.gz` on the releases page.
+setting are a separate release archive (download command in [RoboTwin 2.0](#-robotwin-20)).
 **The real-robot experiments** are not included in this release.
 
 ## 🚀 Evaluation with Released Checkpoints
@@ -303,8 +303,14 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # a ven
 
 The simulation renders with SAPIEN's ray tracer (Vulkan, RTX-class GPU); on RTX 5090 the `optix` denoiser is used
 because the default `oidn` fails there. The expert-checked seeds that fix the scene of every episode index ship with the
-repository (`episode_sets/robotwin_seed_cache/`). For the 1-shot setting, extract `fewshot_bank_robotwin.tar.gz` from
-the releases page with `tar -xz -C recovery_explore`.
+repository (`episode_sets/robotwin_seed_cache/`).
+
+**1-shot example bank (optional, 33 MB).** The RoboTwin worked examples are a separate release archive; it unpacks into
+`recovery_explore/fewshot_bank/robotwin/` next to the RoboCasa bank:
+
+```bash
+curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
+```
 
 **2) Run.**
 

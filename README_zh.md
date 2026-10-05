@@ -194,7 +194,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 | `episode_sets/rt_ctlcheck12.txt` | 12 | 对照复现检查（6 个已知成功、6 个已知失败） |
 | `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | 每个任务经专家检查的种子（集编号到场景的映射） |
 
-RoboTwin 的经验（`memory_bank_robotwin_noreset/`）随仓库提供；1-shot 用的示例是 Release 页面上单独的 `fewshot_bank_robotwin.tar.gz`。
+RoboTwin 的经验（`memory_bank_robotwin_noreset/`）随仓库提供；1-shot 用的示例是单独的 Release 资源（下载命令见下文 [RoboTwin 2.0](#-robotwin-20)）。
 **真机实验**不包含在本次发布中。
 
 ## 🤖 RoboTwin 2.0
@@ -222,8 +222,13 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满�
 ```
 
 仿真用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认用 `optix` 去噪器，因为官方的 `oidn` 在那上面会报错。
-固定每集场景的种子缓存随仓库提供（`episode_sets/robotwin_seed_cache/`）。1-shot 设置需要从 Release 页面下载
-`fewshot_bank_robotwin.tar.gz`，用 `tar -xz -C recovery_explore` 解压。
+固定每集场景的种子缓存随仓库提供（`episode_sets/robotwin_seed_cache/`）。
+
+**1-shot 示例库（可选，33 MB）。** RoboTwin 的示例是单独的 Release 资源，解压后位于 `recovery_explore/fewshot_bank/robotwin/`，与 RoboCasa 的示例库并列：
+
+```bash
+curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
+```
 
 **2）运行。**
 
