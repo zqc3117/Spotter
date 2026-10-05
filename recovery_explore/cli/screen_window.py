@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import socket
 import sys
@@ -93,6 +94,7 @@ def main() -> int:
                     help="host running vLLM. On another machine give its IP (the driver passes $SCREENER_HOST)")
     ap.add_argument("--out", default=None, help="write the full result here (screen_w{N}.json)")
     ap.add_argument("--tag", default="w", help="window tag in the lease filename, to tell who is holding it")
+    ap.add_argument("--family", default="", help="cosmos | pi05 | robotwin: RoboTwin's telemetry table has no width(mm) column, so its empty-grasp rule is computed here")
     a = ap.parse_args()
 
     result = {"flag": True, "risk": None, "rule_hit": None, "why": "", "port": None,
@@ -124,6 +126,22 @@ def main() -> int:
         prev = [t.strip().lower() == "true" for t in a.prev_flags.split(",") if t.strip()]
         with _Lease(a.tag):
             r = screener.screen(img, tel, a.task, prev)
+        # screener.rule_hit reads the last column of every telemetry row as width(mm) and flags < 12.
+        # RoboTwin's table ends with the joint tracking error (radians, always < 12), so that rule would
+        # fire on every window and the screener would screen nothing. For RoboTwin the rule is recomputed
+        # from the gripper openings: a hand closed to <= 0.05 in some chunk of the window = closed on nothing.
+        if str(a.family) in ("robotwin", "robodojo") and isinstance(r, dict):
+            hit = False
+            for line in tel.splitlines():
+                m = re.match(r"^\d+\s+\d+-\d+\s+\([^)]*\)\s+\([^)]*\)\s+([\d.]+)\s*/\s*([\d.]+)", line)
+                if m and min(float(m.group(1)), float(m.group(2))) <= 0.05:
+                    hit = True; break
+            r["rule_hit"] = hit
+            risk = r.get("risk")
+            try:
+                r["flag"] = hit or (risk is not None and int(risk) >= int(getattr(screener, "THRESHOLD", 5)))
+            except Exception:
+                r["flag"] = bool(r.get("flag"))
         if not isinstance(r, dict) or "flag" not in r:
             result["why"] = f"screener returned {type(r).__name__}, treating as flag"
         else:

@@ -78,6 +78,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
 - [用发布的权重评测](#-用发布的权重评测)
+- [RoboTwin 2.0](#-robotwin-20)
 - [复现论文结果](#-复现论文结果)
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
@@ -183,76 +184,74 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 | `episode_sets/s500q96.txt` | 96 | 调试用子集，每个任务 4 集 |
 
 经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
-**RoboTwin 2.0 和真机实验**不包含在本次发布中。
 
-## 🚀 用发布的权重评测
+**RoboTwin 2.0**（双臂桌面，SAPIEN）作为第三个策略族支持，见下文 [RoboTwin 2.0](#-robotwin-20)。它的评测集也随仓库提供：
 
-每个服务各开一个终端，先执行 `source env/env.sh`。
+| 文件 | 集数 | 用途 |
+|---|---:|---|
+| `episode_sets/rt50x5q.txt` | 250 | RoboTwin 评测：50 个任务 × 5 集（demo_randomized seed-0 缓存的 30–47 号） |
+| `episode_sets/rt50x10n.txt` | 500 | rt50x5q 从中抽取的 50 × 10 池 |
+| `episode_sets/rt_ctlcheck12.txt` | 12 | 对照复现检查（6 个已知成功、6 个已知失败） |
+| `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | 每个任务经专家检查的种子（集编号到场景的映射） |
 
-**1）部署 Qwen 筛子和判别器**（每张卡一个副本，端口 8301、8302……）。
+RoboTwin 的经验（`memory_bank_robotwin_noreset/`）随仓库提供；1-shot 用的示例是单独的 Release 资源（下载命令见下文 [RoboTwin 2.0](#-robotwin-20)）。
+**真机实验**不包含在本次发布中。
 
-```bash
-bash spotter.sh judge --gpus 0,1,2,3
-curl -s http://127.0.0.1:8301/v1/models        # 检查
+## 🤖 RoboTwin 2.0
+
+Spotter 也可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)（aloha-agilex 双臂，SAPIEN 3，50 个任务，
+`demo_randomized` 场景）上，策略是 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)。族名为 `robotwin`。
+
+**1）运行时。** RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
+`env/env.sh` 指向它：
+
+```text
+<ROBOTWIN_RUNTIME>/
+├── .venv/                                   # python 3.10：sapien 3.0.0b1、mplib 0.2.1、toppra、与显卡匹配的 CUDA 版 torch
+└── worktree/third_party/RoboTwin/           # RoboTwin 2.0 树
+    ├── envs/curobo/src/                     # cuRobo 源码（其 CUDA 内核需与 torch 匹配）
+    ├── assets/{objects,background_texture,embodiments}/   # RoboTwin 2.0 资源（Hub 上的 TianxingChen/RoboTwin2.0）
+    └── policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/   # pi0.5 权重
 ```
 
-卡少时少写几张（如 `--gpus 0`），并在运行前 `export QWEN_PORTS=8301`。
-
-**2）部署具身模型**：π0.5 用 8900 端口，Cosmos Policy 用 8800 端口。
+按 RoboTwin 的 README 安装好本体和资源后，在 `env/env.sh` 里设置：
 
 ```bash
-bash spotter.sh policy pi05 --gpu 4             # 或：bash spotter.sh policy cosmos --gpu 4
-curl -s http://127.0.0.1:8900/health           # 检查
+export ROBOTWIN_RUNTIME=/path/to/robotwin-runtime            # 或 ROBOTWIN_ROOT + ROBOTWIN_PY
+export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满足 policy/pi05/requirements.txt 的 venv（openpi、lerobot < 0.3）
 ```
 
-**3）冒烟测试：跑一集。** 仿真服务由 driver 自动启动。
+仿真用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认用 `optix` 去噪器，因为官方的 `oidn` 在那上面会报错。
+固定每集场景的种子缓存随仓库提供（`episode_sets/robotwin_seed_cache/`）。
+
+**1-shot 示例库（可选，33 MB）。** RoboTwin 的示例是单独的 Release 资源，解压后位于 `recovery_explore/fewshot_bank/robotwin/`，与 RoboCasa 的示例库并列：
 
 ```bash
-bash spotter.sh run pi05                        # 跑一集：同一场景下对照组和 Spotter 各跑一次
+curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
 ```
 
-**4）在 `sall500` 上完整评测。**
+**2）运行。**
 
 ```bash
-bash spotter.sh run pi05 sall500 --lanes 8
+bash spotter.sh judge --gpus 0,1,2,3                 # Qwen，与 RoboCasa 相同
+bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
+bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集
+bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # 250 集评测集（1-shot）
+bash spotter.sh run robotwin rt50x5q --lanes 12 --arm ctrl   # 同一批格的纯策略基线
 bash spotter.sh summary
 ```
 
-| 选项 | 含义 |
-|---|---|
-| `SET` | `smoke`（1 集，默认）、`s500q96`、`sall500`，或每行一个 `任务:种子:编号` 的文件 |
-| `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
-| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
-| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
-| `--one-shot` | 给判别器加一个示例（需要示例库） |
-| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
-| `--dry-run` | 只打印要执行的命令，不真正运行 |
+`spotter.sh run robotwin` 使用下列 RoboTwin 设置，每一项都可以用环境变量覆盖：
 
-同一个 episode 的两组使用相同的场景、指令和步数预算：
-
-| 组别 | 说明 |
-|---|---|
-| **对照组（Control）** | 只有策略，不调用判别器。 |
-| **实验组（Treatment）** | 策略加判别器，可按需干预。 |
-
-<details>
-<summary>直接调用 driver</summary>
-
-`spotter.sh run` 会为每个 lane 启动一个 driver。上面跑一集 pi0.5 的命令等价于：
-
-```bash
-mkdir -p recovery_explore/runs_smoke
-printf 'PnPCabToCounter:195:0\n' > recovery_explore/runs_smoke/episodes_pi05.txt
-ON_POD=1 RUN=smoke TARGET=1 NGPU=1 FAMILY_OVERRIDE=pi05 \
-SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL=http://127.0.0.1:8900 \
-ENGINE=qwen MODEL=qwen38 SCREEN=1 QWEN_KEEP_TURNS=20 \
-STEP_BUDGET_SCALE=1.8 WINDOW=1 TEL_CHUNKS=10 COMPACT_AT=110000 MAX_INTERVENTIONS=8 \
-ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
-  bash recovery_explore/judge_driver_v7.sh 0
-```
-
-driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 run 的所有 lane 从同一个队列领取 episode，结果数达到 `TARGET` 后各 lane 自动结束。
-</details>
+| 设置 | RoboTwin 取值 |
+|---|---:|
+| `FAMILY_OVERRIDE` / 策略端口 | `robotwin` / `9100` |
+| `WINDOW` / `RT_TEL_CHUNKS` | `2` / `10` |
+| `MAX_INTERVENTIONS` | `5` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | `10` / `40000` |
+| `ROBOTWIN_TASK_CONFIG` | `demo_randomized` |
+| `JUDGE_DEADLINE` / `ACT_DEADLINE` | 每次调用 `1200` / `2400` 秒 |
+| `RT_MEMORY_BANK` | `memory_bank_robotwin_noreset`（`RT_MEMORY=0` 关闭经验） |
 
 ## 📊 复现论文结果
 

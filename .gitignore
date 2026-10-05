@@ -238,3 +238,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# machine-specific environment (copy of env/env.sh.example)
+env/env.sh
