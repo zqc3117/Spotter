@@ -73,28 +73,19 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 ## 📑 目录
 
-同一套代码跑两个仿真器，按需要选一个：
-
-| | RoboCasa | RoboTwin 2.0 |
-|---|---|---|
-| 机器人 / 场景 | Franka，厨房（24 个任务） | aloha-agilex 双臂，桌面（50 个任务） |
-| 具身模型 | π0.5、Cosmos Policy | π0.5（motus-robotics/pi0.5_robotwin2） |
-| 判别器 / 筛子 | 本地 Qwen3.8-27B-FP8（共用） | 本地 Qwen3.8-27B-FP8（共用） |
-| 用法 | [RoboCasa](#-robocasa) | [RoboTwin 2.0](#-robotwin-20) |
-
-- [RoboCasa](#-robocasa)：环境 · 权重 · 资源与评测集 · 运行
-- [RoboTwin 2.0](#-robotwin-20)：运行时与权重 · 评测集与示例库 · 运行
-- [复现论文结果](#-复现论文结果) · [重建经验库与示例库](#-重建经验库与示例库)
-- [接入你自己的具身模型](#-接入你自己的具身模型) · [输出](#-输出) · [配置参考](#-配置参考)
+- [环境配置](#-环境配置)
+- [模型准备](#-模型准备)
+- [仿真资源与评测集](#-仿真资源与评测集)
+- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
+- [复现论文结果](#-复现论文结果)
+- [重建经验库与示例库](#-重建经验库与示例库)
+- [接入你自己的具身模型](#-接入你自己的具身模型)
+- [输出](#-输出) · [配置参考](#-配置参考)
 - [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
 
-## 🏠 RoboCasa
+## 🔧 环境配置
 
-本节全部针对 RoboCasa 上的 π0.5 / Cosmos Policy。
-
-### 1. 环境
-
-Spotter 用到三个 Python 环境：
+RoboCasa 用到三个 Python 环境：
 
 | 环境 | Python | 运行什么 | 安装 |
 |---|---|---|---|
@@ -118,7 +109,31 @@ cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 
 > **注意**：无显示器的 MuJoCo 渲染需要支持 EGL 的 NVIDIA GPU（`MUJOCO_GL=egl`，已在 `env/env.sh` 中设置）。
 
-### 2. 权重
+**RoboTwin 2.0（可选）。** Spotter 也可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+（aloha-agilex 双臂，SAPIEN 3，50 个任务，`demo_randomized` 场景）上，族名为 `robotwin`。
+
+RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
+`env/env.sh` 指向它：
+
+```text
+<ROBOTWIN_RUNTIME>/
+├── .venv/                                   # python 3.10：sapien 3.0.0b1、mplib 0.2.1、toppra、与显卡匹配的 CUDA 版 torch
+└── worktree/third_party/RoboTwin/           # RoboTwin 2.0 树
+    ├── envs/curobo/src/                     # cuRobo 源码（其 CUDA 内核需与 torch 匹配）
+    ├── assets/{objects,background_texture,embodiments}/   # RoboTwin 2.0 资源（Hub 上的 TianxingChen/RoboTwin2.0）
+    └── policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/   # pi0.5 权重
+```
+
+按 RoboTwin 的 README 安装好本体和资源后，在 `env/env.sh` 里设置：
+
+```bash
+export ROBOTWIN_RUNTIME=/path/to/robotwin-runtime            # 或 ROBOTWIN_ROOT + ROBOTWIN_PY
+export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满足 policy/pi05/requirements.txt 的 venv（openpi、lerobot < 0.3）
+```
+
+仿真用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认用 `optix` 去噪器，因为官方的 `oidn` 在那上面会报错。
+
+## 📦 模型准备
 
 **1）下载权重。**
 
@@ -154,12 +169,23 @@ export VLLM_VENV=$PWD/.venvs/vllm
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
 ```
 
+**5）RoboTwin 2.0（可选）。** 策略是 pi0.5 权重
+[motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)，放在 RoboTwin 树里的
+`policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/`（见[环境配置](#-环境配置)）。
+1-shot 设置需要把 RoboTwin 示例库（33 MB）下载到 `recovery_explore/fewshot_bank/robotwin/`：
+
+```bash
+curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
+```
+
 > **GPT 判别器（可选）**：设置 `ENGINE=api`，并配好 `OPENAI_RESPONSES_URL` 和 `OPENAI_API_TOKEN_FILE`；
 > 判别器换成 GPT-6 Astra，筛子仍然是本地 Qwen。
 
-### 3. 资源与评测集
+## 🧭 仿真资源与评测集
 
 **RoboCasa 资源**随上面 Cosmos Policy 的 RoboCasa 安装步骤一起装好。
+
+**RoboTwin 2.0 资源**随 RoboTwin 本体一起安装（见[环境配置](#-环境配置)）。
 
 **评测集**随仓库提供，每行一个 `任务:种子:编号`：
 
@@ -167,10 +193,11 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 |---|---:|---|
 | `episode_sets/sall500.txt` | 1200 | 论文评测：24 个任务 × 编号 0–49，seed 500 |
 | `episode_sets/s500q96.txt` | 96 | 调试用子集，每个任务 4 集 |
+| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 评测：50 个任务 × 10 集 |
 
 经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
 
-### 4. 运行
+## 🚀 用发布的权重评测
 
 每个服务各开一个终端，先执行 `source env/env.sh`。
 
@@ -182,6 +209,8 @@ curl -s http://127.0.0.1:8301/v1/models        # 检查
 ```
 
 卡少时少写几张（如 `--gpus 0`），并在运行前 `export QWEN_PORTS=8301`。
+
+### RoboCasa
 
 **2）部署具身模型**：π0.5 用 8900 端口，Cosmos Policy 用 8800 端口。
 
@@ -239,46 +268,11 @@ ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
 driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 run 的所有 lane 从同一个队列领取 episode，结果数达到 `TARGET` 后各 lane 自动结束。
 </details>
 
-## 🤖 RoboTwin 2.0
+### RoboTwin 2.0
 
-Spotter 也可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)（aloha-agilex 双臂，SAPIEN 3，50 个任务，
-`demo_randomized` 场景）上，策略是 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)。族名为 `robotwin`。
-
-### 1. 运行时与权重
-
-RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
-`env/env.sh` 指向它：
-
-```text
-<ROBOTWIN_RUNTIME>/
-├── .venv/                                   # python 3.10：sapien 3.0.0b1、mplib 0.2.1、toppra、与显卡匹配的 CUDA 版 torch
-└── worktree/third_party/RoboTwin/           # RoboTwin 2.0 树
-    ├── envs/curobo/src/                     # cuRobo 源码（其 CUDA 内核需与 torch 匹配）
-    ├── assets/{objects,background_texture,embodiments}/   # RoboTwin 2.0 资源（Hub 上的 TianxingChen/RoboTwin2.0）
-    └── policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/   # pi0.5 权重
-```
-
-按 RoboTwin 的 README 安装好本体和资源后，在 `env/env.sh` 里设置：
+第 1 步的 Qwen 服务起来后：
 
 ```bash
-export ROBOTWIN_RUNTIME=/path/to/robotwin-runtime            # 或 ROBOTWIN_ROOT + ROBOTWIN_PY
-export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满足 policy/pi05/requirements.txt 的 venv（openpi、lerobot < 0.3）
-```
-
-仿真用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认用 `optix` 去噪器，因为官方的 `oidn` 在那上面会报错。
-
-### 2. 评测集与示例库
-
-评测集是 `episode_sets/rt50x10n.txt`（50 个任务 × 10 集）。1-shot 设置需要把 RoboTwin 示例库（33 MB）下载到 `recovery_explore/fewshot_bank/robotwin/`：
-
-```bash
-curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz | tar -xz -C recovery_explore
-```
-
-### 3. 运行
-
-```bash
-bash spotter.sh judge --gpus 0,1,2,3                 # Qwen，与 RoboCasa 相同
 bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
 bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集
 bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # 完整评测集（1-shot）
