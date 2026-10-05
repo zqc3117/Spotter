@@ -194,7 +194,8 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.t
 | `episode_sets/rt_ctlcheck12.txt` | 12 | 对照复现检查（6 个已知成功、6 个已知失败） |
 | `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | 每个任务经专家检查的种子（集编号到场景的映射） |
 
-RoboTwin 的经验（`memory_bank_robotwin_noreset/`）和示例（示例库里的 `fewshot_bank/robotwin/`）来自 0、20、21、50 号集，与测试集编号不重叠。
+RoboTwin 的经验（`memory_bank_robotwin_noreset/`）随仓库提供；1-shot 用的 RoboTwin 示例（`fewshot_bank/robotwin/`，33 MB）是 Release 页面上单独的
+`fewshot_bank_robotwin.tar.gz`，和 RoboCasa 的示例库一样解压（`tar -xz -C recovery_explore`）。两者都来自 0、20、21、50 号集，与测试集编号不重叠。
 **真机实验**不包含在本次发布中。
 
 ## 🤖 RoboTwin 2.0

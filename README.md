@@ -202,8 +202,10 @@ Its episode sets ship too:
 | `episode_sets/rt_ctlcheck12.txt` | 12 | control reproduction check (6 known successes, 6 known failures) |
 | `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | expert-checked RoboTwin seeds per task (the scene an episode index maps to) |
 
-The RoboTwin lessons (`memory_bank_robotwin_noreset/`) and worked examples (`fewshot_bank/robotwin/`, in the example
-bank archive) come from episode indices 0, 20, 21 and 50, disjoint from the test indices.
+The RoboTwin lessons (`memory_bank_robotwin_noreset/`) ship with the repository; the RoboTwin worked examples for the
+1-shot setting (`fewshot_bank/robotwin/`, 33 MB) are a separate archive, `fewshot_bank_robotwin.tar.gz` on the releases
+page, extracted like the RoboCasa one (`tar -xz -C recovery_explore`). Both come from episode indices 0, 20, 21 and 50,
+disjoint from the test indices.
 **The real-robot experiments** are not included in this release.
 
 ## 🚀 Evaluation with Released Checkpoints
@@ -286,7 +288,7 @@ The same screener → judge → repair loop runs on [RoboTwin 2.0](https://githu
 bash spotter.sh judge --gpus 0,1,2,3                 # Qwen, as for RoboCasa
 bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
 bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35, control + Spotter
-bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode evaluation (1-shot setting)
+bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode evaluation (1-shot: needs fewshot_bank_robotwin.tar.gz, see above)
 ```
 
 **Runtime.** RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
