@@ -202,10 +202,8 @@ Its episode sets ship too:
 | `episode_sets/rt_ctlcheck12.txt` | 12 | control reproduction check (6 known successes, 6 known failures) |
 | `episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json` | — | expert-checked RoboTwin seeds per task (the scene an episode index maps to) |
 
-The RoboTwin lessons (`memory_bank_robotwin_noreset/`) ship with the repository; the RoboTwin worked examples for the
-1-shot setting (`fewshot_bank/robotwin/`, 33 MB) are a separate archive, `fewshot_bank_robotwin.tar.gz` on the releases
-page, extracted like the RoboCasa one (`tar -xz -C recovery_explore`). Both come from episode indices 0, 20, 21 and 50,
-disjoint from the test indices.
+The RoboTwin lessons (`memory_bank_robotwin_noreset/`) ship with the repository; the worked examples for the 1-shot
+setting are the separate archive `fewshot_bank_robotwin.tar.gz` on the releases page.
 **The real-robot experiments** are not included in this release.
 
 ## 🚀 Evaluation with Released Checkpoints
@@ -280,43 +278,46 @@ claim episodes from the same queue, and each lane stops once the run has `TARGET
 
 ## 🤖 RoboTwin 2.0
 
-The same screener → judge → repair loop runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
-(aloha-agilex dual arm, SAPIEN 3, 50 tasks, `demo_randomized` scenes) with the pi0.5 checkpoint
-[motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2). The family is `robotwin`:
+Spotter also runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) (aloha-agilex dual arm, SAPIEN 3,
+50 tasks, `demo_randomized` scenes) with the pi0.5 checkpoint
+[motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2). The family is `robotwin`.
 
-```bash
-bash spotter.sh judge --gpus 0,1,2,3                 # Qwen, as for RoboCasa
-bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
-bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35, control + Spotter
-bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode evaluation (1-shot: needs fewshot_bank_robotwin.tar.gz, see above)
-```
-
-**Runtime.** RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
-laid out as a *portable runtime* that `env/env.sh` points at with `ROBOTWIN_RUNTIME`:
+**1) Runtime.** RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
+laid out as a *portable runtime* that `env/env.sh` points at:
 
 ```text
 <ROBOTWIN_RUNTIME>/
 ├── .venv/                                   # python 3.10: sapien 3.0.0b1, mplib 0.2.1, toppra, torch (CUDA build matching your GPU)
 └── worktree/third_party/RoboTwin/           # the RoboTwin 2.0 tree
-    ├── envs/curobo/src/                     # cuRobo sources (on the PYTHONPATH; its CUDA kernels must match your torch)
+    ├── envs/curobo/src/                     # cuRobo sources (its CUDA kernels must match your torch)
     ├── assets/{objects,background_texture,embodiments}/   # RoboTwin 2.0 assets (TianxingChen/RoboTwin2.0 on the Hub)
-    └── policy/pi05/                         # RoboTwin's pi0.5 adapter; checkpoints under policy/pi0/checkpoints/<train_config>/<name>/<step>
+    └── policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/   # the pi0.5 checkpoint
 ```
 
-Install RoboTwin 2.0 and its assets as its README says, point `ROBOTWIN_RUNTIME` (or `ROBOTWIN_ROOT` + `ROBOTWIN_PY`) at
-them, and give `ROBOTWIN_POLICY_PYTHON` a venv that satisfies `policy/pi05/requirements.txt` (openpi, lerobot < 0.3 and
-the patched transformers it needs) with the checkpoint extracted under `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000`
-(`ROBOTWIN_MODEL_NAME` / `ROBOTWIN_CKPT_ID`). The simulation service renders with SAPIEN's ray tracer on an
-RTX-class GPU (Vulkan); on RTX 5090 the `optix` denoiser is used because the default `oidn` fails there.
+Install RoboTwin 2.0 and its assets as its README says, then set in `env/env.sh`:
 
-**What the family changes.** Everything in `spotter.sh run robotwin` is the RoboTwin setting of the paper's experiments:
-2 chunks per judge window, the last 10 chunks of action history in the telemetry, 5 interventions per episode, the step
-budget × 1.8, no rollbacks, Qwen history of 10 turns with compaction at 40k tokens, and RoboTwin's own lesson bank
-(`memory_bank_robotwin_noreset/`). The screener's empty-grasp rule is recomputed from the gripper openings
-(RoboTwin reports a normalised opening, not a finger gap), the repair primitives are the dual-arm set of
-`robotwin_intervention.py`, and the judge sees three cameras (head + two wrists) per chunk. The scene of an episode is
-fixed by the shipped seed cache: episode index *k* of a task is its *k*-th expert-checked seed, so control and
-Spotter, and any two runs, see the same scene for the same `TASK:0:k`.
+```bash
+export ROBOTWIN_RUNTIME=/path/to/robotwin-runtime            # or ROBOTWIN_ROOT + ROBOTWIN_PY
+export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # a venv satisfying policy/pi05/requirements.txt (openpi, lerobot < 0.3)
+```
+
+The simulation renders with SAPIEN's ray tracer (Vulkan, RTX-class GPU); on RTX 5090 the `optix` denoiser is used
+because the default `oidn` fails there. The expert-checked seeds that fix the scene of every episode index ship with the
+repository (`episode_sets/robotwin_seed_cache/`). For the 1-shot setting, extract `fewshot_bank_robotwin.tar.gz` from
+the releases page with `tar -xz -C recovery_explore`.
+
+**2) Run.**
+
+```bash
+bash spotter.sh judge --gpus 0,1,2,3                 # Qwen, as for RoboCasa
+bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
+bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35
+bash spotter.sh run robotwin rt50x5q --lanes 12 --one-shot   # the 250-episode set (1-shot)
+bash spotter.sh run robotwin rt50x5q --lanes 12 --arm ctrl   # the policy-only baseline on the same cells
+bash spotter.sh summary
+```
+
+`spotter.sh run robotwin` applies the RoboTwin settings; every one can still be overridden through the environment:
 
 | Setting | RoboTwin value |
 |---|---:|
@@ -327,14 +328,6 @@ Spotter, and any two runs, see the same scene for the same `TASK:0:k`.
 | `ROBOTWIN_TASK_CONFIG` | `demo_randomized` |
 | `JUDGE_DEADLINE` / `ACT_DEADLINE` | `1200` / `2400` s per call |
 | `RT_MEMORY_BANK` | `memory_bank_robotwin_noreset` (`RT_MEMORY=0` disables lessons) |
-
-Results pair by cell exactly as on RoboCasa (`results.jsonl`, `bash spotter.sh summary`). A `--arm ctrl` run of the same
-set gives the policy-only baseline; the environment matters for that baseline, so compare against a control run made on
-the same machine, not against numbers from another installation.
-
-**Reference run** (this code, `rt50x5q`, 1-shot, local Qwen3.8-27B-FP8, repair turns thinking, no rollbacks; 248 of the
-250 cells, two seeds were unstable on the evaluation machine): policy only 117/248 = 47.2%, Spotter 124/248 = 50.0%
-(40 episodes rescued, 33 lost, 93 episodes with at least one intervention).
 
 ## 📊 Reproducing the Paper
 
