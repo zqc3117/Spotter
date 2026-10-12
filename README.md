@@ -77,15 +77,18 @@ falls **below the policy alone** (Cosmos Policy 67.9 → 65.2, π0.5 64.3 → 60
 With Qwen, the judge is called **less than once** per successful episode on average, which adds only **13–16 s**
 over the policy alone and takes about **70% less time** than a VLM-led agent using the same Qwen.
 
+> **Status (October 2026): please use RoboTwin 2.0 for now.** The RoboCasa path has a rendering bug: in a small
+> fraction of episodes the offscreen renderer returns black or noisy camera frames, which makes those episodes fail.
+> A fix is being validated. Until it lands, the RoboCasa instructions in this README are hidden; RoboTwin 2.0 is
+> unaffected and fully supported.
+
 ## 📑 Index
 
 - [File Structure](#-file-structure)
 - [Environment Setup](#-environment-setup)
 - [Model Preparation](#-model-preparation)
 - [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
-- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
-- [Reproducing the Paper](#-reproducing-the-paper)
-- [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
+- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboTwin 2.0](#robotwin-20)
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
 - [Outputs](#-outputs) · [Configuration Reference](#-configuration-reference)
 - [Acknowledgements](#-acknowledgements) · [License](#-license) · [Citation](#-citation)
@@ -118,6 +121,8 @@ Spotter/
 
 ## 🔧 Environment Setup
 
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [environment]
+
 Spotter uses three Python environments for RoboCasa:
 
 | Environment | Python | Runs | Install |
@@ -142,7 +147,16 @@ cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 
 > **Note.** Headless MuJoCo rendering needs an EGL-capable NVIDIA GPU (`MUJOCO_GL=egl`, set in `env/env.sh`).
 
-**RoboTwin 2.0 (optional).** Spotter also runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+-->
+
+**Qwen screener and judge.** vLLM in its own environment, and a local `env/env.sh`:
+
+```bash
+python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
+cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
+```
+
+**RoboTwin 2.0.** Spotter runs on [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
 (aloha-agilex dual arm, SAPIEN 3, 50 tasks, `demo_randomized` scenes); the family is `robotwin`.
 
 RoboTwin's simulator and planner (SAPIEN 3, mplib, cuRobo) live in their own Python 3.10 environment,
@@ -168,6 +182,8 @@ The simulation renders with SAPIEN's ray tracer (Vulkan, RTX-class GPU); on RTX 
 because the default `oidn` fails there.
 
 ## 📦 Model Preparation
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [weights]
 
 **1) Download the weights.**
 
@@ -201,7 +217,22 @@ export VLLM_VENV=$PWD/.venvs/vllm
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
 ```
 
-**5) RoboTwin 2.0 (optional).** The policy is the pi0.5 checkpoint
+-->
+
+**1) Qwen judge and screener.**
+
+```bash
+huggingface-cli download Qwen/Qwen3.8-27B-FP8 --local-dir checkpoints/Qwen3.8-27B-FP8
+```
+
+Then set in `env/env.sh`:
+
+```bash
+export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
+export VLLM_VENV=$PWD/.venvs/vllm
+```
+
+**2) RoboTwin 2.0.** The policy is the pi0.5 checkpoint
 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2), placed at
 `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/` inside the RoboTwin tree
 (see [Environment Setup](#-environment-setup)). For the 1-shot setting, download the RoboTwin example bank (33 MB)
@@ -216,7 +247,11 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 ## 🧭 Simulator Assets and Episode Sets
 
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [assets]
+
 **RoboCasa assets** are installed by the Cosmos Policy RoboCasa setup above.
+
+-->
 
 **RoboTwin 2.0 assets** are installed with RoboTwin itself ([Environment Setup](#-environment-setup)).
 
@@ -224,11 +259,14 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | File | Episodes | Use |
 |---|---:|---|
-| `episode_sets/sall500.txt` | 1,200 | paper evaluation: 24 tasks × episodes 0–49, seed 500 |
-| `episode_sets/s500q96.txt` | 96 | debugging subset, 4 episodes per task |
 | `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 evaluation: 50 tasks × 10 episodes |
 
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [episode sets]
+
+RoboCasa sets: `episode_sets/sall500.txt` (1,200, the paper's RoboCasa evaluation: 24 tasks × episodes 0–49, seed 500) and `episode_sets/s500q96.txt` (96, debugging subset).
 Lessons and worked examples were learned on seed 195, disjoint from the test seed.
+
+-->
 
 ## 🚀 Evaluation with Released Checkpoints
 
@@ -242,6 +280,8 @@ curl -s http://127.0.0.1:8301/v1/models        # check
 ```
 
 With fewer GPUs, pass fewer ids (e.g. `--gpus 0`) and `export QWEN_PORTS=8301` before running.
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [evaluation]
 
 ### RoboCasa
 
@@ -265,22 +305,9 @@ bash spotter.sh run pi05 sall500 --lanes 8
 bash spotter.sh summary
 ```
 
-| Option | Meaning |
-|---|---|
-| `SET` | `smoke` (1 episode, default), `s500q96`, `sall500`, or a file with one `TASK:SEED:EPISODE` per line |
-| `--lanes N` | episodes run in parallel; lane `N` runs its own simulation service on port `8450+N` |
-| `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
-| `--arm` | `both` (control and Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
-| `--one-shot` | add one worked example to the judge (needs the example bank) |
-| `--run NAME` | run name (default `<family>_<set>`); rerunning the same name resumes it |
-| `--dry-run` | print the commands without running them |
+-->
 
-Both arms of an episode share the same scene, instruction and step budget:
-
-| Arm | Description |
-|---|---|
-| **Control** | Policy only; no judge calls. |
-| **Treatment** | Policy plus judge and optional interventions. |
+<!-- ROBOCASA-HIDDEN [evaluation, direct driver call]
 
 <details>
 <summary>Running the driver directly</summary>
@@ -302,6 +329,8 @@ The driver starts and restarts the simulation service on port `8450+lane` by its
 claim episodes from the same queue, and each lane stops once the run has `TARGET` results.
 </details>
 
+-->
+
 ### RoboTwin 2.0
 
 With the Qwen servers from step 1 running:
@@ -314,7 +343,28 @@ bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # the policy-only b
 bash spotter.sh summary
 ```
 
+**Run options** (`bash spotter.sh run <family> [SET] [options]`):
+
+| Option | Meaning |
+|---|---|
+| `SET` | `smoke` (1 episode, default), `rt50x10n` (RoboTwin 2.0, 500 episodes), or a file with one `TASK:SEED:EPISODE` per line |
+| `--lanes N` | episodes run in parallel; lane `N` runs its own simulation service on port `8450+N` |
+| `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
+| `--arm` | `both` (control and Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
+| `--one-shot` | add one worked example to the judge (needs the example bank) |
+| `--run NAME` | run name (default `<family>_<set>`); rerunning the same name resumes it |
+| `--dry-run` | print the commands without running them |
+
+Both arms of an episode share the same scene, instruction and step budget:
+
+| Arm | Description |
+|---|---|
+| **Control** | Policy only; no judge calls. |
+| **Treatment** | Policy plus judge and optional interventions. |
+
 `spotter.sh run robotwin` applies the RoboTwin column of the [Configuration Reference](#-configuration-reference); every setting can still be overridden through the environment.
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [paper reproduction and lesson library]
 
 ## 📊 Reproducing the Paper
 
@@ -365,6 +415,8 @@ ENGINE=api LEARN=1 ALLOW_RESET=1 MAX_RESETS=5 bash spotter.sh run cosmos <seed-1
 python3 recovery_explore/cli/fewshot_build.py --family cosmos --seed 195 --out recovery_explore/fewshot_bank
 ```
 
+-->
+
 ## 🔌 Plugging In Your Own Embodied Model
 
 Spotter never trains the policy, so a new embodied model only needs to be served and registered:
@@ -398,7 +450,7 @@ recovery_explore/runs_<RUN>_<family>/
 
 ```bash
 bash spotter.sh summary            # all runs
-bash spotter.sh summary pi05_sall500
+bash spotter.sh summary robotwin_rt50x10n
 ```
 
 ## 🧩 Configuration Reference
