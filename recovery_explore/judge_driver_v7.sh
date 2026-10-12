@@ -119,7 +119,7 @@ SCREEN=${SCREEN:-0}; SCREENER_HOST=${SCREENER_HOST:-127.0.0.1}
 # Round three switched to opus 5: round-two interventions could not tell "which moment needs fixing", and judging was too conservative.
 JUDGE_DEADLINE=${JUDGE_DEADLINE:-600}; ACT_DEADLINE=${ACT_DEADLINE:-1500}   # per-call deadlines (s); RoboTwin thinking runs raise JUDGE_DEADLINE
 # Qwen thinking: the screener and the window verdict never think; the repair turns of an intervention
-# (exec rounds, push, replan, repeat) think when QWEN_REPAIR_THINK=1, up to QWEN_THINK_BUDGET (2000) tokens
+# (exec rounds, push, replan, repeat) think when QWEN_REPAIR_THINK=1, up to QWEN_THINK_BUDGET (4000) tokens
 # (cli/qwen_call.py). QWEN_REPAIR_THINK=0 is the paper's setting: no call thinks.
 QWEN_REPAIR_THINK=${QWEN_REPAIR_THINK:-1}
 # Judge backend: claude = claude code cli, codex = codex cli.
