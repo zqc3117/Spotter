@@ -408,6 +408,23 @@ bash spotter.sh summary pi05_sall500
 
 Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `4000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
 
+**思考预算怎么选。** `QWEN_THINK_BUDGET` 按你的 Qwen 服务能承受的程度来设。预算越大，修复计划想得越充分，但每个修复回合
+越慢；预算越小越快，但思考没想完就会被截断。建议取能让修复回合在 `ACT_DEADLINE` 之内完成的最大预算（GPU 较慢、或每个
+副本带的 lane 较多时，也把 `ACT_DEADLINE` 调大），跑完后检查一下大多数修复回合**没有**被截断。每次修复回复都存在该集文件夹
+的 `act_w*_a*_r*.json` 里，思考撞到预算上限时会记 `think_budget_hit: true`：
+
+```bash
+python3 - <<'EOF'
+import glob, json
+files = glob.glob("recovery_explore/runs_<RUN>_<family>/lane*/jd-*/act_w*.json")
+hit = sum(bool(json.load(open(f)).get("think_budget_hit")) for f in files)
+print(f"{hit}/{len(files)} repair turns hit the thinking budget")
+EOF
+```
+
+如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 83% 的修复
+回合思考被截断。
+
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 
 | 变量 | 默认值 | 作用 |
