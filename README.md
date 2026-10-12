@@ -444,7 +444,7 @@ EOF
 ```
 
 If more than about half are cut, raise the budget (or add Qwen replicas so the larger budget stays fast). On RoboTwin 2.0,
-a budget of 2000 cut off about 83% of the repair-turn thinking.
+a budget of 2000 cut off the thinking in about 65% of the repair turns.
 
 How the judge is paced has its own switches, all off or conservative by default:
 

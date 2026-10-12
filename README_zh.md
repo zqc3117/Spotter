@@ -422,7 +422,7 @@ print(f"{hit}/{len(files)} repair turns hit the thinking budget")
 EOF
 ```
 
-如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 83% 的修复
+如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 65% 的修复
 回合思考被截断。
 
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
