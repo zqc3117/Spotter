@@ -70,7 +70,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 try:  # package import (normal: run as `python -m recovery_explore.env_service`)
-    from recovery_explore import cosmos_call, snapshot_bridge
+    from recovery_explore import cosmos_call, render_guard, snapshot_bridge
     from recovery_explore.primitives import RecoveryPrimitives
     from recovery_explore.rpc_transport import (
         MainThreadServeMixin,
@@ -79,6 +79,7 @@ try:  # package import (normal: run as `python -m recovery_explore.env_service`)
     )
 except ImportError:  # pragma: no cover - direct `python env_service.py`
     import cosmos_call  # type: ignore[no-redef]
+    import render_guard  # type: ignore[no-redef]
     import snapshot_bridge  # type: ignore[no-redef]
     from primitives import RecoveryPrimitives  # type: ignore[no-redef]
     from rpc_transport import (  # type: ignore[no-redef]
@@ -317,6 +318,11 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         if not 0.1 <= float(step_budget_scale) <= 5.0:
             raise ValueError("step_budget_scale must be in [0.1, 5.0]")
         self._step_budget_scale = float(step_budget_scale)
+        # GL render guard (recovery_explore/render_guard.py): patches robosuite so the render
+        # context leaked by robocasa's hard reset cannot kill the live EGL context when the GC
+        # collects it, and checks every frame handed out. Default-on; RENDER_GUARD=0 disables.
+        render_guard.install()
+        render_guard.set_logger(self._log)
 
         self._env: Any = None
         self._cfg: Any = None
@@ -669,6 +675,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         raw, _reward, _done, _info = env.step(np.asarray(flat_action, dtype=np.float64))
         self._raw_obs = raw
         self._policy_obs = prepare_observation(raw, self._cfg.flip_images)
+        if self._guard_observation("step"):
+            raw = self._raw_obs  # re-rendered (same simulator state; only the images changed)
         self._step_count += 1
         if charge:
             ep = self._episode
@@ -676,6 +684,47 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             # harness_advance keeps these two equal at the end of every call; so does this.
             self._failure_origin_timestep = int(ep["failure_committed_timestep"])
         return raw
+
+    # ---- render guard glue (recovery_explore/render_guard.py) ------------------
+
+    def _guard_meta(self) -> dict[str, Any]:
+        ep = self._episode or {}
+        return {"episode": f"{ep.get('task')}:{ep.get('seed')}:{ep.get('episode_index')}" if ep else None,
+                "t": int(ep.get("failure_committed_timestep", self._step_count)) if ep else int(self._step_count)}
+
+    def _guard_frames(self, size: int, *, where: str) -> dict[str, np.ndarray]:
+        """``render_camera_512`` behind the render guard: garbage frames are re-rendered after
+        re-binding / rebuilding / recreating the offscreen context (see render_guard.py)."""
+        from cf_bench.vlm_correction_rollout import render_camera_512
+
+        env = self._require_env()
+        flip = self._cfg.flip_images
+        return render_guard.guarded_render(
+            env, lambda: render_camera_512(env, flip_images=flip, size=int(size)),
+            where=where, meta=self._guard_meta())
+
+    def _guard_observation(self, where: str) -> bool:
+        """The policy's own camera observations come from the same offscreen context. If they carry
+        the garbage signature, re-render them (``_get_observations(force_update=True)``: no physics
+        step, same simulator state) through the guard's recovery ladder. Returns True if re-rendered."""
+        if not render_guard.ENABLED or self._raw_obs is None:
+            return False
+        images = render_guard.obs_images(self._raw_obs)
+        if not images:
+            return False
+        if render_guard.VERBOSE:
+            render_guard._emit({"event": "obs", "where": where, "stats": render_guard._stats_str(images),
+                                **self._guard_meta()})
+        if not render_guard.frames_look_bad(images):
+            return False
+        env = self._require_env()
+
+        def rerender() -> dict[str, np.ndarray]:
+            self._refresh_observation()
+            return render_guard.obs_images(self._raw_obs)
+
+        render_guard.guarded_render(env, rerender, where=f"obs/{where}", meta=self._guard_meta())
+        return True
 
     def _primitive_driver(self) -> RecoveryPrimitives:
         if self._primitives is None:
@@ -694,6 +743,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         """
         return {
             "run_id": self._run_id,
+            "render_guard": render_guard.counters(),
             "anchors_jsonl": str(self._anchors_jsonl) if self._anchors_jsonl else None,
             "anchor_id": self._restored.anchor_id if self._restored else None,
             "state_id": self._state_id(),
@@ -786,6 +836,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             self._env, self._cfg = snapshot_bridge.build_env(
                 anchor, run_id=self._run_id, output_dir=self._output_dir
             )
+            render_guard.reap_leaked_contexts(self._env)
             self._env_key = key
         elif key != self._env_key:
             raise RuntimeError(
@@ -851,6 +902,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
@@ -1514,12 +1566,10 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         with it -- depth is always returned because ``unproject`` needs the same
         map, and there is only one depth camera.
         """
-        from cf_bench.vlm_correction_rollout import render_camera_512
-
         env = self._require_env()
         size = int(self._render_size)
         main_camera = MAIN_CAMERA
-        frames = render_camera_512(env, flip_images=self._cfg.flip_images, size=size)
+        frames = self._guard_frames(size, where="render")
         out: dict[str, Any] = {
             "size": size,
             "rgb": {key: np.ascontiguousarray(value) for key, value in frames.items()},
@@ -2174,11 +2224,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             # Real frames are ALWAYS captured: with the privileged grasp
             # predicate gone from the model side, the imagined-vs-real image pair
             # is the model's only evidence about what the policy actually did.
-            from cf_bench.vlm_correction_rollout import render_camera_512
-
-            frames = render_camera_512(
-                env, flip_images=self._cfg.flip_images, size=self._render_size
-            )
+            frames = self._guard_frames(self._render_size, where="call_cosmos")
             assert self._policy_obs is not None
             return cosmos_call.ChunkResult(
                 observation=self._policy_obs,
@@ -2524,6 +2570,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
@@ -2817,12 +2864,14 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
         )
         ff.stabilize(self._env, self._cfg)
         self._refresh_observation()
+        self._guard_observation("episode_begin")
         self._step_count = 0
 
         instruction = str(self._env.get_ep_meta().get("lang") or "")
@@ -2877,7 +2926,6 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         from rpc.run_remote_robocasa_collect import (
             TASK_MAX_STEPS, _to_environment_action, _gripper_aperture,
         )
-        from cf_bench.vlm_correction_rollout import render_camera_512
         from .primitives import (
             OSC_POS_SCALE, OSC_ROT_SCALE, GRIPPER_INDEX, BASE_MODE_INDEX,
         )
@@ -3016,14 +3064,14 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 # Also sample one frame inside the chunk: human review found "the drop happens inside the chunk and is only visible in the next frame";
                 # sampling only at chunk end collapses the whole chunk into one static image.
                 if index == mid - 1 and mid > 0:
-                    shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+                    shot = self._guard_frames(frame_size, where="advance_mid")
                     frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
                     frame_steps.append(int(committed))
                 if env._check_success():
                     succeeded = True
                     break
             query_index += 1
-            shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+            shot = self._guard_frames(frame_size, where="advance_end")
             frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
             frame_steps.append(int(committed))
             # What this chunk's policy commanded, where the end effector actually went, and how wide the gripper is.
@@ -3089,6 +3137,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 "width_mm": round(_width() * 1000.0, 1),
             },
             "done": bool(succeeded or committed >= budget or stopped != "chunks_done"),
+            # render-guard counters for this process (recovery_explore/render_guard.py); all zero on a clean episode
+            "render_guard": render_guard.counters(),
             "frames": frames,
             "frame_steps": frame_steps,
         }
@@ -3169,8 +3219,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         def _snap() -> None:
             if not record_frames:
                 return
-            from cf_bench.vlm_correction_rollout import render_camera_512
-            shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+            shot = self._guard_frames(frame_size, where="resume")
             frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
             frame_steps.append(int(committed))
 
