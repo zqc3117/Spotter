@@ -428,6 +428,24 @@ bash spotter.sh summary pi05_sall500
 
 Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `4000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
 
+**Choosing the thinking budget.** Set `QWEN_THINK_BUDGET` to what your Qwen servers can afford. A larger budget gives
+the repair plan more room but makes every repair turn slower; a smaller one is faster but cuts the thinking off before
+it finishes. Use the largest budget that keeps repair turns within `ACT_DEADLINE` (raise that too on slow GPUs or with
+many lanes per replica), and check after a run that most repair turns were **not** cut off. Each repair reply is saved
+as `act_w*_a*_r*.json` in the episode folder, with `think_budget_hit: true` when the thinking ran into the budget:
+
+```bash
+python3 - <<'EOF'
+import glob, json
+files = glob.glob("recovery_explore/runs_<RUN>_<family>/lane*/jd-*/act_w*.json")
+hit = sum(bool(json.load(open(f)).get("think_budget_hit")) for f in files)
+print(f"{hit}/{len(files)} repair turns hit the thinking budget")
+EOF
+```
+
+If more than about half are cut, raise the budget (or add Qwen replicas so the larger budget stays fast). On RoboTwin 2.0,
+a budget of 2000 cut off about 83% of the repair-turn thinking.
+
 How the judge is paced has its own switches, all off or conservative by default:
 
 | Variable | Default | Effect |
