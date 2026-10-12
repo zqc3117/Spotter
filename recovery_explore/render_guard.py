@@ -246,17 +246,16 @@ def reap_leaked_contexts(env: Any) -> int:
     except Exception:
         return 0
     live = getattr(getattr(env, "sim", None), "_render_context_offscreen", None)
-    stale = [o for o in gc.get_objects() if isinstance(o, MjRenderContext) and o is not live]
-    n = len(stale)
-    for s in stale:
-        s.__dict__["_render_guard_stale"] = True
-    del stale
+    # Count only -- do not keep a reference (a loop variable left alive here would keep the cycle
+    # reachable and make the gc.collect() below a no-op).
+    n = sum(1 for o in gc.get_objects() if isinstance(o, MjRenderContext) and o is not live)
+    before = _counters["reaped"]
     gc.collect()
     if live is not None:
         ensure_current(live, why="reap")
     if n or VERBOSE:
-        _emit({"event": "reaped_leaked_contexts", "stale": n, "live_ctx": hex(_gl_ctx_addr(live)),
-               "current": hex(current_context_addr())})
+        _emit({"event": "reaped_leaked_contexts", "stale": n, "freed": _counters["reaped"] - before,
+               "live_ctx": hex(_gl_ctx_addr(live)), "current": hex(current_context_addr())})
     return n
 
 
