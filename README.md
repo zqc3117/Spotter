@@ -80,7 +80,11 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 > **Status (October 2026): please use RoboTwin 2.0 for now.** The RoboCasa path has a rendering bug: in a small
 > fraction of episodes the offscreen renderer returns black or noisy camera frames, which makes those episodes fail.
 > A fix is being validated. Until it lands, the RoboCasa instructions in this README are hidden; RoboTwin 2.0 is
-> unaffected and fully supported.
+> unaffected and fully supported. Run it with one command, `bash robotwin_eval.sh` (see
+> [Evaluation](#-evaluation-with-released-checkpoints)).
+>
+> **RoboTwin 2.0 results and full logs** (control vs. Spotter-Qwen, every episode's frames, prompts and replies):
+> [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) · [50 tasks × 5 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5).
 
 ## 📑 Index
 
@@ -98,6 +102,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 ```text
 Spotter/
 ├── spotter.sh                        # one entry point: serve Qwen / the policy, run episodes, summarize
+├── robotwin_eval.sh                  # one-command RoboTwin 2.0 evaluation (servers + Spotter arm + control + summary)
 ├── recovery_explore/                 # Spotter itself
 │   ├── judge_driver_v7.sh            # supervision loop for one lane: screen -> judge -> repair -> verify
 │   ├── env_service.py                # RoboCasa simulation service (RPC), started by launch_svc.sh
@@ -259,7 +264,8 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | File | Episodes | Use |
 |---|---:|---|
-| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 evaluation: 50 tasks × 10 episodes |
+| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0: 50 tasks × 10 episodes |
+| `episode_sets/rt500.txt` | 500 | RoboTwin 2.0 evaluation used for the released results: `rt50x10n` with the episodes that cannot be built in the current simulator replaced by the next buildable episode of the same task |
 
 <!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [episode sets]
 
@@ -333,21 +339,40 @@ claim episodes from the same queue, and each lane stops once the run has `TARGET
 
 ### RoboTwin 2.0
 
+**One command.** `robotwin_eval.sh` starts Qwen and the pi0.5 policy if they are not already up, runs the Spotter arm
+and then the policy-only control on the same 500 episodes (`rt500`), and prints the summary. It uses the settings of
+the released results: 1.8× step budget, 1-shot, Qwen thinking in the repair turns with `QWEN_THINK_BUDGET=5000`.
+
+```bash
+bash robotwin_eval.sh --judge-gpus 0,1,2,3 --policy-gpu 4 --lanes 12
+```
+
+Add `--dry-run` to print the commands without running them. Each RoboTwin simulator takes about 8 GB of GPU memory,
+so plan about three lanes per 32 GB GPU. The judge's thinking dominates the time of the Spotter arm; more Qwen replicas
+(`--judge-gpus`) make it faster.
+
+<details>
+<summary>Step by step</summary>
+
 With the Qwen servers from step 1 running:
 
 ```bash
 bash spotter.sh policy robotwin --gpu 4              # pi0.5 for RoboTwin, port 9100 (check: curl http://127.0.0.1:9100/healthz)
 bash spotter.sh run robotwin                         # smoke: adjust_bottle, episode 35
-bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # the full set (1-shot)
-bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # the policy-only baseline on the same cells
+bash spotter.sh run robotwin rt500 --lanes 12 --one-shot     # Spotter arm on the 500 evaluation episodes (1-shot)
+bash spotter.sh run robotwin rt500 --lanes 12 --arm ctrl     # the policy-only baseline on the same episodes
 bash spotter.sh summary
 ```
+</details>
+
+Our results with these settings, with every episode's frames, judge prompts and replies, are on ModelScope:
+[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) and [50 tasks × 5 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5).
 
 **Run options** (`bash spotter.sh run <family> [SET] [options]`):
 
 | Option | Meaning |
 |---|---|
-| `SET` | `smoke` (1 episode, default), `rt50x10n` (RoboTwin 2.0, 500 episodes), or a file with one `TASK:SEED:EPISODE` per line |
+| `SET` | `smoke` (1 episode, default), `rt500` or `rt50x10n` (RoboTwin 2.0, 500 episodes), or a file with one `TASK:SEED:EPISODE` per line |
 | `--lanes N` | episodes run in parallel; lane `N` runs its own simulation service on port `8450+N` |
 | `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
 | `--arm` | `both` (control and Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
@@ -478,7 +503,7 @@ bash spotter.sh summary robotwin_rt50x10n
 | `QWEN_KEEP_TURNS` | `20` | Recent judge turns kept in full. |
 | `FEWSHOT` | `0` | `1` adds one worked example (`--one-shot`); needs the example bank. |
 
-Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `4000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
+Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `5000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
 
 **Choosing the thinking budget.** Set `QWEN_THINK_BUDGET` to what your Qwen servers can afford. A larger budget gives
 the repair plan more room but makes every repair turn slower; a smaller one is faster but cuts the thinking off before
@@ -496,7 +521,7 @@ EOF
 ```
 
 If more than about half are cut, raise the budget (or add Qwen replicas so the larger budget stays fast). On RoboTwin 2.0,
-a budget of 2000 cut off the thinking in about 65% of the repair turns.
+a budget of 2000 cut off the thinking in about 65% of the repair turns, and 5000 in about 44%.
 
 How the judge is paced has its own switches, all off or conservative by default:
 

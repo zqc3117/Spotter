@@ -73,7 +73,11 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 > **当前状态（2026 年 10 月）：请先使用 RoboTwin 2.0。** RoboCasa 这条路径目前有一个渲染 bug：少部分 episode 里，
 > 离屏渲染器会返回全黑或带噪点的相机画面，导致这些 episode 失败。修复正在验证中。修复上线之前，本 README 中
-> RoboCasa 的使用说明暂时隐藏；RoboTwin 2.0 不受影响，可以正常使用。
+> RoboCasa 的使用说明暂时隐藏；RoboTwin 2.0 不受影响，可以正常使用，一条命令 `bash robotwin_eval.sh` 即可运行
+> （见[用发布的权重评测](#-用发布的权重评测)）。
+>
+> **RoboTwin 2.0 的实验结果和完整记录**（对照组 vs. Spotter-Qwen，每集的画面、提示词和回复）：
+> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) · [50 个任务 × 5 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5)。
 
 ## 📑 目录
 
@@ -91,6 +95,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 ```text
 Spotter/
 ├── spotter.sh                        # 统一入口：部署 Qwen / 策略服务、运行、汇总结果
+├── robotwin_eval.sh                  # RoboTwin 2.0 一键评测（起服务 + Spotter 组 + 对照组 + 汇总）
 ├── recovery_explore/                 # Spotter 本体
 │   ├── judge_driver_v7.sh            # 单个 lane 的监督循环：筛查 -> 判别 -> 修复 -> 验证
 │   ├── env_service.py                # RoboCasa 仿真服务（RPC），由 launch_svc.sh 启动
@@ -252,7 +257,8 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | 文件 | 集数 | 用途 |
 |---|---:|---|
-| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 评测：50 个任务 × 10 集 |
+| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0：50 个任务 × 10 集 |
+| `episode_sets/rt500.txt` | 500 | 发布结果所用的 RoboTwin 2.0 评测集：在 `rt50x10n` 基础上，把当前仿真环境里无法开局的集替换为同任务下一个能开局的集 |
 
 <!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [episode sets]
 
@@ -325,21 +331,39 @@ driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 ru
 
 ### RoboTwin 2.0
 
+**一条命令。** `robotwin_eval.sh` 会在 Qwen 和 pi0.5 策略服务没起来时自动启动它们，然后在同一批 500 集（`rt500`）上
+先跑 Spotter 组、再跑纯策略对照组，最后输出汇总。设置和发布结果一致：1.8 倍步数上限、1-shot、Qwen 只在修复回合思考，
+`QWEN_THINK_BUDGET=5000`。
+
+```bash
+bash robotwin_eval.sh --judge-gpus 0,1,2,3 --policy-gpu 4 --lanes 12
+```
+
+加 `--dry-run` 只打印要执行的命令。每个 RoboTwin 仿真大约占 8 GB 显存，32 GB 的卡建议每张跑 3 条 lane。Spotter 组的耗时
+主要在判别器思考上，多给 Qwen 几张卡（`--judge-gpus`）会更快。
+
+<details>
+<summary>分步运行</summary>
+
 第 1 步的 Qwen 服务起来后：
 
 ```bash
 bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
 bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集
-bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # 完整评测集（1-shot）
-bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # 同一批格的纯策略基线
+bash spotter.sh run robotwin rt500 --lanes 12 --one-shot     # 在 500 个评测集上跑 Spotter 组（1-shot）
+bash spotter.sh run robotwin rt500 --lanes 12 --arm ctrl     # 同一批集上的纯策略对照组
 bash spotter.sh summary
 ```
+</details>
+
+我们按这套设置跑出的结果，连同每集的画面、判别器提示词和回复，都放在 ModelScope 上：
+[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) 和 [50 个任务 × 5 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5)。
 
 **运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
 
 | 选项 | 含义 |
 |---|---|
-| `SET` | `smoke`（1 集，默认）、`rt50x10n`（RoboTwin 2.0，500 集），或每行一个 `任务:种子:编号` 的文件 |
+| `SET` | `smoke`（1 集，默认）、`rt500` 或 `rt50x10n`（RoboTwin 2.0，500 集），或每行一个 `任务:种子:编号` 的文件 |
 | `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
 | `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
 | `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
@@ -457,7 +481,7 @@ bash spotter.sh summary robotwin_rt50x10n
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
 
-Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `4000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `5000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
 
 **思考预算怎么选。** `QWEN_THINK_BUDGET` 按你的 Qwen 服务能承受的程度来设。预算越大，修复计划想得越充分，但每个修复回合
 越慢；预算越小越快，但思考没想完就会被截断。建议取能让修复回合在 `ACT_DEADLINE` 之内完成的最大预算（GPU 较慢、或每个
@@ -474,7 +498,7 @@ EOF
 ```
 
 如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 65% 的修复
-回合思考被截断。
+回合思考被截断，5000 时大约 44%。
 
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 
