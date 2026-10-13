@@ -77,7 +77,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 > （见[用发布的权重评测](#-用发布的权重评测)）。
 >
 > **RoboTwin 2.0 的实验结果和完整记录**（对照组 vs. Spotter-Qwen，每集的画面、提示词和回复）：
-> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) · [50 个任务 × 5 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5)。
+> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
 ## 📑 目录
 
@@ -357,7 +357,7 @@ bash spotter.sh summary
 </details>
 
 我们按这套设置跑出的结果，连同每集的画面、判别器提示词和回复，都放在 ModelScope 上：
-[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) 和 [50 个任务 × 5 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5)。
+[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
 **运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
 

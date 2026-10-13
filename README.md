@@ -84,7 +84,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 > [Evaluation](#-evaluation-with-released-checkpoints)).
 >
 > **RoboTwin 2.0 results and full logs** (control vs. Spotter-Qwen, every episode's frames, prompts and replies):
-> [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) · [50 tasks × 5 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5).
+> [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
 
 ## 📑 Index
 
@@ -366,7 +366,7 @@ bash spotter.sh summary
 </details>
 
 Our results with these settings, with every episode's frames, judge prompts and replies, are on ModelScope:
-[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) and [50 tasks × 5 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x5).
+[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
 
 **Run options** (`bash spotter.sh run <family> [SET] [options]`):
 
