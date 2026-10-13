@@ -356,8 +356,18 @@ bash spotter.sh summary
 ```
 </details>
 
-我们按这套设置跑出的结果，连同每集的画面、判别器提示词和回复，都放在 ModelScope 上：
-[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+**用这版代码的结果。** 我们用这版代码在 RoboTwin 2.0 上重跑了 Spotter 组，评测集是 `rt500` 的 500 集（1.8 倍步数上限、
+1-shot）；对照组是同样 500 集上的策略独跑：
+
+| 组别 | 成功 |
+|---|---:|
+| 策略独跑（pi0.5） | 240 / 500（48.0%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=2000` | 252 / 500（50.4%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=5000`（默认） | 267 / 500（53.4%） |
+
+pi0.5 在 RoboTwin 上不能逐位复现，每次运行都有随机波动：同一组在同样 500 集上重跑，成功率通常会差上一两个点（单次 500 集
+的标准误差约 2 个点）。你复现时的结果应落在这个范围内，而不是和上表完全一样。每集的画面、判别器提示词和回复都放在
+ModelScope 上：[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
 **运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
 
@@ -458,6 +468,26 @@ bash spotter.sh summary robotwin_rt50x10n
 
 ## 🧩 配置参考
 
+| 设置 | RoboTwin 2.0 · pi0.5 |
+|---|---:|
+| `FAMILY_OVERRIDE` | `robotwin` |
+| 每块步数 | 16 |
+| `WINDOW`（判别窗口，单位：块） | 2 |
+| `RT_TEL_CHUNKS` | 10 |
+| `STEP_BUDGET_SCALE`（对照组和 Spotter 相同） | `1.8` |
+| `SCREEN` / `SCREEN_CONFIRM2` | `1` / `1` |
+| `MAX_INTERVENTIONS` | 5 |
+| `ALLOW_RESET` / `MAX_RESETS`（不回档） | `0` / `0` |
+| `ENGINE` / `MODEL` | `qwen` / `qwen38` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | 10 / 40000 |
+| `FEWSHOT` | `1`（`--one-shot`，需要 RoboTwin 示例库） |
+| `QWEN_THINK_BUDGET`（修复回合） | 5000 |
+| 策略服务端口 / 程序 | 9100 / `recovery_explore/robotwin_policy_server.py` |
+
+`spotter.sh run robotwin` 和 `robotwin_eval.sh` 会使用这些取值；每一项都可以用环境变量覆盖。
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [configuration tables]
+
 | 设置 | RoboCasa · Cosmos | RoboCasa · pi0.5 | RoboTwin 2.0 · pi0.5 |
 |---|---:|---:|---:|
 | `FAMILY_OVERRIDE` | `cosmos` | `pi05` | `robotwin` |
@@ -480,6 +510,8 @@ bash spotter.sh summary robotwin_rt50x10n
 | `COMPACT_AT` | `110000` | Qwen 对话压缩阈值（token）。 |
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
+
+-->
 
 Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `5000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
 

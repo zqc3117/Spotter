@@ -365,8 +365,19 @@ bash spotter.sh summary
 ```
 </details>
 
-Our results with these settings, with every episode's frames, judge prompts and replies, are on ModelScope:
-[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
+**Results with this code.** We re-ran the Spotter arms on RoboTwin 2.0 with this version of the code, on the 500
+episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone on the same 500 episodes:
+
+| Arm | Success |
+|---|---:|
+| Policy alone (pi0.5) | 240 / 500 (48.0%) |
+| Spotter-Qwen, `QWEN_THINK_BUDGET=2000` | 252 / 500 (50.4%) |
+| Spotter-Qwen, `QWEN_THINK_BUDGET=5000` (default) | 267 / 500 (53.4%) |
+
+pi0.5 on RoboTwin is not bit-reproducible, so every run carries random variation: repeating an arm on the same 500
+episodes typically moves its success rate by a couple of points (one 500-episode run has a standard error of about
+2 points). Expect your numbers to land within that range rather than match exactly. Every episode's frames, judge
+prompts and replies are on ModelScope: [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
 
 **Run options** (`bash spotter.sh run <family> [SET] [options]`):
 
@@ -480,6 +491,26 @@ bash spotter.sh summary robotwin_rt50x10n
 
 ## 🧩 Configuration Reference
 
+| Setting | RoboTwin 2.0 · pi0.5 |
+|---|---:|
+| `FAMILY_OVERRIDE` | `robotwin` |
+| Steps per chunk | 16 |
+| `WINDOW` (judge window, in chunks) | 2 |
+| `RT_TEL_CHUNKS` | 10 |
+| `STEP_BUDGET_SCALE` (same for control and Spotter) | `1.8` |
+| `SCREEN` / `SCREEN_CONFIRM2` | `1` / `1` |
+| `MAX_INTERVENTIONS` | 5 |
+| `ALLOW_RESET` / `MAX_RESETS` (no rollbacks) | `0` / `0` |
+| `ENGINE` / `MODEL` | `qwen` / `qwen38` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | 10 / 40000 |
+| `FEWSHOT` | `1` (`--one-shot`, needs the RoboTwin example bank) |
+| `QWEN_THINK_BUDGET` (repair turns) | 5000 |
+| Policy port / server | 9100 / `recovery_explore/robotwin_policy_server.py` |
+
+`spotter.sh run robotwin` and `robotwin_eval.sh` apply these values; every one can be overridden through the environment.
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [configuration tables]
+
 | Setting | RoboCasa · Cosmos | RoboCasa · pi0.5 | RoboTwin 2.0 · pi0.5 |
 |---|---:|---:|---:|
 | `FAMILY_OVERRIDE` | `cosmos` | `pi05` | `robotwin` |
@@ -502,6 +533,8 @@ bash spotter.sh summary robotwin_rt50x10n
 | `COMPACT_AT` | `110000` | Qwen conversation compaction threshold (tokens). |
 | `QWEN_KEEP_TURNS` | `20` | Recent judge turns kept in full. |
 | `FEWSHOT` | `0` | `1` adds one worked example (`--one-shot`); needs the example bank. |
+
+-->
 
 Qwen thinks only in the repair turns of an intervention, up to `QWEN_THINK_BUDGET` (default `5000`) tokens per call; the screener and the window verdict never think, and `QWEN_REPAIR_THINK=0` turns thinking off everywhere, as in the paper.
 
