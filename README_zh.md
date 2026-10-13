@@ -365,8 +365,8 @@ bash spotter.sh summary
 | Spotter-Qwen，`QWEN_THINK_BUDGET=2000` | 252 / 500（50.4%） |
 | Spotter-Qwen，`QWEN_THINK_BUDGET=5000`（默认） | 267 / 500（53.4%） |
 
-pi0.5 在 RoboTwin 上不能逐位复现，每次运行都有随机波动，这样的差别在正常误差范围内。每集的画面、判别器提示词和回复都放在
-ModelScope 上：[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+由于每次运行都有随机因素，这些结果和论文略有差异。我们把逐集结果（每集的画面、判别器提示词和回复）上传到了 ModelScope：
+[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
 **运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
 

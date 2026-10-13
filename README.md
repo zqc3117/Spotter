@@ -374,8 +374,8 @@ episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone
 | Spotter-Qwen, `QWEN_THINK_BUDGET=2000` | 252 / 500 (50.4%) |
 | Spotter-Qwen, `QWEN_THINK_BUDGET=5000` (default) | 267 / 500 (53.4%) |
 
-pi0.5 on RoboTwin is not bit-reproducible, so every run carries random variation; differences of this size are within
-the normal range. Every episode's frames, judge prompts and replies are on ModelScope:
+Because every run involves randomness, these numbers differ somewhat from the paper. We have uploaded the
+per-episode results, with every episode's frames, judge prompts and replies, to ModelScope:
 [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
 
 **Run options** (`bash spotter.sh run <family> [SET] [options]`):
