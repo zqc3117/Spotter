@@ -80,7 +80,7 @@ def main() -> None:
     # not closed by then, a closing line and </think> are appended as the assistant's own text and the
     # model continues with the answer (vLLM continue_final_message), which gets its own 3000 tokens.
     thinking = a.think == "1"
-    think_budget = int(os.environ.get("QWEN_THINK_BUDGET") or 2000)
+    think_budget = int(os.environ.get("QWEN_THINK_BUDGET") or 5000)
     answer_tokens = 3000
     payload = {"model": a.model, "messages": _trim(msgs), "max_tokens": think_budget if thinking else answer_tokens,
                "temperature": 0.2, "chat_template_kwargs": {"enable_thinking": thinking}}

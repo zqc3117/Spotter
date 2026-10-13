@@ -71,15 +71,21 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 用 Qwen 时，成功的 episode 平均调用判别器**不到 1 次**，只比策略单独运行多 **13–16 秒**；和用同一个 Qwen 的 VLM 主导方法相比，耗时少约 **70%**。
 
+> **当前状态（2026 年 10 月）：请先使用 RoboTwin 2.0。** RoboCasa 这条路径目前有一个渲染 bug：少部分 episode 里，
+> 离屏渲染器会返回全黑或带噪点的相机画面，导致这些 episode 失败。修复正在验证中。修复上线之前，本 README 中
+> RoboCasa 的使用说明暂时隐藏；RoboTwin 2.0 不受影响，可以正常使用，一条命令 `bash robotwin_eval.sh` 即可运行
+> （见[用发布的权重评测](#-用发布的权重评测)）。
+>
+> **RoboTwin 2.0 的实验结果和完整记录**（对照组 vs. Spotter-Qwen，每集的画面、提示词和回复）：
+> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+
 ## 📑 目录
 
 - [文件结构](#-文件结构)
 - [环境配置](#-环境配置)
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
-- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
-- [复现论文结果](#-复现论文结果)
-- [重建经验库与示例库](#-重建经验库与示例库)
+- [用发布的权重评测](#-用发布的权重评测)：[RoboTwin 2.0](#robotwin-20)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
 - [输出](#-输出) · [配置参考](#-配置参考)
 - [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
@@ -89,6 +95,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 ```text
 Spotter/
 ├── spotter.sh                        # 统一入口：部署 Qwen / 策略服务、运行、汇总结果
+├── robotwin_eval.sh                  # RoboTwin 2.0 一键评测（起服务 + Spotter 组 + 对照组 + 汇总）
 ├── recovery_explore/                 # Spotter 本体
 │   ├── judge_driver_v7.sh            # 单个 lane 的监督循环：筛查 -> 判别 -> 修复 -> 验证
 │   ├── env_service.py                # RoboCasa 仿真服务（RPC），由 launch_svc.sh 启动
@@ -111,6 +118,8 @@ Spotter/
 ```
 
 ## 🔧 环境配置
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [environment]
 
 RoboCasa 用到三个 Python 环境：
 
@@ -136,7 +145,16 @@ cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 
 > **注意**：无显示器的 MuJoCo 渲染需要支持 EGL 的 NVIDIA GPU（`MUJOCO_GL=egl`，已在 `env/env.sh` 中设置）。
 
-**RoboTwin 2.0（可选）。** Spotter 也可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+-->
+
+**Qwen 筛子和判别器。** vLLM 单独一个环境，再准备本地的 `env/env.sh`：
+
+```bash
+python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
+cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
+```
+
+**RoboTwin 2.0。** Spotter 可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
 （aloha-agilex 双臂，SAPIEN 3，50 个任务，`demo_randomized` 场景）上，族名为 `robotwin`。
 
 RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
@@ -161,6 +179,8 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满�
 仿真用 SAPIEN 的光线追踪渲染（Vulkan，RTX 级显卡）；RTX 5090 上默认用 `optix` 去噪器，因为官方的 `oidn` 在那上面会报错。
 
 ## 📦 模型准备
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [weights]
 
 **1）下载权重。**
 
@@ -196,7 +216,22 @@ export VLLM_VENV=$PWD/.venvs/vllm
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
 ```
 
-**5）RoboTwin 2.0（可选）。** 策略是 pi0.5 权重
+-->
+
+**1）Qwen 判别器和筛子。**
+
+```bash
+huggingface-cli download Qwen/Qwen3.8-27B-FP8 --local-dir checkpoints/Qwen3.8-27B-FP8
+```
+
+国内用户也可以从 [ModelScope](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8) 下载。然后在 `env/env.sh` 中设置：
+
+```bash
+export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
+export VLLM_VENV=$PWD/.venvs/vllm
+```
+
+**2）RoboTwin 2.0。** 策略是 pi0.5 权重
 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)，放在 RoboTwin 树里的
 `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/`（见[环境配置](#-环境配置)）。
 1-shot 设置需要把 RoboTwin 示例库（33 MB）下载到 `recovery_explore/fewshot_bank/robotwin/`：
@@ -210,7 +245,11 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 ## 🧭 仿真资源与评测集
 
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [assets]
+
 **RoboCasa 资源**随上面 Cosmos Policy 的 RoboCasa 安装步骤一起装好。
+
+-->
 
 **RoboTwin 2.0 资源**随 RoboTwin 本体一起安装（见[环境配置](#-环境配置)）。
 
@@ -218,11 +257,15 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | 文件 | 集数 | 用途 |
 |---|---:|---|
-| `episode_sets/sall500.txt` | 1200 | 论文评测：24 个任务 × 编号 0–49，seed 500 |
-| `episode_sets/s500q96.txt` | 96 | 调试用子集，每个任务 4 集 |
-| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 评测：50 个任务 × 10 集 |
+| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0：50 个任务 × 10 集 |
+| `episode_sets/rt500.txt` | 500 | 发布结果所用的 RoboTwin 2.0 评测集：在 `rt50x10n` 基础上，把当前仿真环境里无法开局的集替换为同任务下一个能开局的集 |
 
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [episode sets]
+
+RoboCasa 评测集：`episode_sets/sall500.txt`（1200 集，论文的 RoboCasa 评测：24 个任务 × 编号 0–49，seed 500）和 `episode_sets/s500q96.txt`（96 集，调试用子集）。
 经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
+
+-->
 
 ## 🚀 用发布的权重评测
 
@@ -236,6 +279,8 @@ curl -s http://127.0.0.1:8301/v1/models        # 检查
 ```
 
 卡少时少写几张（如 `--gpus 0`），并在运行前 `export QWEN_PORTS=8301`。
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [evaluation]
 
 ### RoboCasa
 
@@ -259,22 +304,9 @@ bash spotter.sh run pi05 sall500 --lanes 8
 bash spotter.sh summary
 ```
 
-| 选项 | 含义 |
-|---|---|
-| `SET` | `smoke`（1 集，默认）、`s500q96`、`sall500`，或每行一个 `任务:种子:编号` 的文件 |
-| `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
-| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
-| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
-| `--one-shot` | 给判别器加一个示例（需要示例库） |
-| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
-| `--dry-run` | 只打印要执行的命令，不真正运行 |
+-->
 
-同一个 episode 的两组使用相同的场景、指令和步数预算：
-
-| 组别 | 说明 |
-|---|---|
-| **对照组（Control）** | 只有策略，不调用判别器。 |
-| **实验组（Treatment）** | 策略加判别器，可按需干预。 |
+<!-- ROBOCASA-HIDDEN [evaluation, direct driver call]
 
 <details>
 <summary>直接调用 driver</summary>
@@ -295,19 +327,69 @@ ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
 driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 run 的所有 lane 从同一个队列领取 episode，结果数达到 `TARGET` 后各 lane 自动结束。
 </details>
 
+-->
+
 ### RoboTwin 2.0
+
+**一条命令。** `robotwin_eval.sh` 会在 Qwen 和 pi0.5 策略服务没起来时自动启动它们，然后在同一批 500 集（`rt500`）上
+先跑 Spotter 组、再跑纯策略对照组，最后输出汇总。设置和发布结果一致：1.8 倍步数上限、1-shot、Qwen 只在修复回合思考，
+`QWEN_THINK_BUDGET=5000`。
+
+```bash
+bash robotwin_eval.sh --judge-gpus 0,1,2,3 --policy-gpu 4 --lanes 12
+```
+
+加 `--dry-run` 只打印要执行的命令。每个 RoboTwin 仿真大约占 8 GB 显存，32 GB 的卡建议每张跑 3 条 lane。Spotter 组的耗时
+主要在判别器思考上，多给 Qwen 几张卡（`--judge-gpus`）会更快。
+
+<details>
+<summary>分步运行</summary>
 
 第 1 步的 Qwen 服务起来后：
 
 ```bash
 bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
 bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集
-bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # 完整评测集（1-shot）
-bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # 同一批格的纯策略基线
+bash spotter.sh run robotwin rt500 --lanes 12 --one-shot     # 在 500 个评测集上跑 Spotter 组（1-shot）
+bash spotter.sh run robotwin rt500 --lanes 12 --arm ctrl     # 同一批集上的纯策略对照组
 bash spotter.sh summary
 ```
+</details>
+
+**用这版代码的结果。** 我们用这版代码在 RoboTwin 2.0 上重跑了 Spotter 组，评测集是 `rt500` 的 500 集（1.8 倍步数上限、
+1-shot）；对照组是同样 500 集上的策略独跑：
+
+| 组别 | 成功 |
+|---|---:|
+| 策略独跑（pi0.5） | 240 / 500（48.0%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=2000` | 252 / 500（50.4%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=5000`（默认） | 267 / 500（53.4%） |
+
+由于每次运行都有随机因素，这些结果和论文略有差异。我们把逐集结果（每集的画面、判别器提示词和回复）上传到了 ModelScope：
+[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+
+**运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
+
+| 选项 | 含义 |
+|---|---|
+| `SET` | `smoke`（1 集，默认）、`rt500` 或 `rt50x10n`（RoboTwin 2.0，500 集），或每行一个 `任务:种子:编号` 的文件 |
+| `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
+| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
+| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
+| `--one-shot` | 给判别器加一个示例（需要示例库） |
+| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
+| `--dry-run` | 只打印要执行的命令，不真正运行 |
+
+同一个 episode 的两组使用相同的场景、指令和步数预算：
+
+| 组别 | 说明 |
+|---|---|
+| **对照组（Control）** | 只有策略，不调用判别器。 |
+| **实验组（Treatment）** | 策略加判别器，可按需干预。 |
 
 `spotter.sh run robotwin` 使用[配置参考](#-配置参考)里 RoboTwin 那一列的设置，每一项都可以用环境变量覆盖。
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [paper reproduction and lesson library]
 
 ## 📊 复现论文结果
 
@@ -349,6 +431,8 @@ ENGINE=api LEARN=1 ALLOW_RESET=1 MAX_RESETS=5 bash spotter.sh run cosmos <seed 1
 python3 recovery_explore/cli/fewshot_build.py --family cosmos --seed 195 --out recovery_explore/fewshot_bank
 ```
 
+-->
+
 ## 🔌 接入你自己的具身模型
 
 Spotter 从不训练策略，所以接入新的具身模型只需要部署服务并注册：
@@ -378,10 +462,30 @@ recovery_explore/runs_<RUN>_<策略>/
 
 ```bash
 bash spotter.sh summary            # 所有 run
-bash spotter.sh summary pi05_sall500
+bash spotter.sh summary robotwin_rt50x10n
 ```
 
 ## 🧩 配置参考
+
+| 设置 | RoboTwin 2.0 · pi0.5 |
+|---|---:|
+| `FAMILY_OVERRIDE` | `robotwin` |
+| 每块步数 | 16 |
+| `WINDOW`（判别窗口，单位：块） | 2 |
+| `RT_TEL_CHUNKS` | 10 |
+| `STEP_BUDGET_SCALE`（对照组和 Spotter 相同） | `1.8` |
+| `SCREEN` / `SCREEN_CONFIRM2` | `1` / `1` |
+| `MAX_INTERVENTIONS` | 5 |
+| `ALLOW_RESET` / `MAX_RESETS`（不回档） | `0` / `0` |
+| `ENGINE` / `MODEL` | `qwen` / `qwen38` |
+| `QWEN_KEEP_TURNS` / `COMPACT_AT` | 10 / 40000 |
+| `FEWSHOT` | `1`（`--one-shot`，需要 RoboTwin 示例库） |
+| `QWEN_THINK_BUDGET`（修复回合） | 5000 |
+| 策略服务端口 / 程序 | 9100 / `recovery_explore/robotwin_policy_server.py` |
+
+`spotter.sh run robotwin` 和 `robotwin_eval.sh` 会使用这些取值；每一项都可以用环境变量覆盖。
+
+<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [configuration tables]
 
 | 设置 | RoboCasa · Cosmos | RoboCasa · pi0.5 | RoboTwin 2.0 · pi0.5 |
 |---|---:|---:|---:|
@@ -406,7 +510,26 @@ bash spotter.sh summary pi05_sall500
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
 
-Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `2000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+-->
+
+Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `5000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+
+**思考预算怎么选。** `QWEN_THINK_BUDGET` 按你的 Qwen 服务能承受的程度来设。预算越大，修复计划想得越充分，但每个修复回合
+越慢；预算越小越快，但思考没想完就会被截断。建议取能让修复回合在 `ACT_DEADLINE` 之内完成的最大预算（GPU 较慢、或每个
+副本带的 lane 较多时，也把 `ACT_DEADLINE` 调大），跑完后检查一下大多数修复回合**没有**被截断。每次修复回复都存在该集文件夹
+的 `act_w*_a*_r*.json` 里，思考撞到预算上限时会记 `think_budget_hit: true`：
+
+```bash
+python3 - <<'EOF'
+import glob, json
+files = glob.glob("recovery_explore/runs_<RUN>_<family>/lane*/jd-*/act_w*.json")
+hit = sum(bool(json.load(open(f)).get("think_budget_hit")) for f in files)
+print(f"{hit}/{len(files)} repair turns hit the thinking budget")
+EOF
+```
+
+如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 65% 的修复
+回合思考被截断，5000 时大约 44%。
 
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 
