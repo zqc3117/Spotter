@@ -16,11 +16,12 @@
   <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-Spotter-2ea44f?style=for-the-badge" alt="Project page"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://robocasa.ai"><img src="https://img.shields.io/badge/Simulator-RoboCasa-4c8bf5?style=for-the-badge" alt="RoboCasa"></a>
+  <a href="https://github.com/RoboTwin-Platform/RoboTwin"><img src="https://img.shields.io/badge/Simulator-RoboTwin_2.0-7a5af8?style=for-the-badge" alt="RoboTwin 2.0"></a>
 </p>
 
 | 📄 论文 | 🏠 项目主页 | 🤖 模型权重 | 🌐 仿真器 | 🚀 上手 |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B)（RoboCasa）· [pi0.5](https://huggingface.co/motus-robotics/pi0.5_robotwin2)（RoboTwin 2.0） | [RoboCasa](https://robocasa.ai) · [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
@@ -71,10 +72,8 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 用 Qwen 时，成功的 episode 平均调用判别器**不到 1 次**，只比策略单独运行多 **13–16 秒**；和用同一个 Qwen 的 VLM 主导方法相比，耗时少约 **70%**。
 
-> **当前状态（2026 年 10 月）：请先使用 RoboTwin 2.0。** RoboCasa 这条路径目前有一个渲染 bug：少部分 episode 里，
-> 离屏渲染器会返回全黑或带噪点的相机画面，导致这些 episode 失败。修复正在验证中。修复上线之前，本 README 中
-> RoboCasa 的使用说明暂时隐藏；RoboTwin 2.0 不受影响，可以正常使用，一条命令 `bash robotwin_eval.sh` 即可运行
-> （见[用发布的权重评测](#-用发布的权重评测)）。
+> **仿真器。** Spotter 同时支持 [RoboCasa](#robocasa) 和 [RoboTwin 2.0](#robotwin-20)。RoboTwin 2.0 可以一条命令
+> `bash robotwin_eval.sh` 跑完整个评测（见[用发布的权重评测](#-用发布的权重评测)）。
 >
 > **RoboTwin 2.0 的实验结果和完整记录**（对照组 vs. Spotter-Qwen，每集的画面、提示词和回复）：
 > [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
@@ -85,7 +84,9 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [环境配置](#-环境配置)
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
-- [用发布的权重评测](#-用发布的权重评测)：[RoboTwin 2.0](#robotwin-20)
+- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
+- [复现论文结果](#-复现论文结果)
+- [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
 - [输出](#-输出) · [配置参考](#-配置参考)
 - [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
@@ -119,15 +120,20 @@ Spotter/
 
 ## 🔧 环境配置
 
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [environment]
+**Qwen 筛子和判别器。** vLLM 单独一个环境，再准备本地的 `env/env.sh`：
 
-RoboCasa 用到三个 Python 环境：
+```bash
+python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
+cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
+```
+
+**RoboCasa。** RoboCasa 用到三个 Python 环境：
 
 | 环境 | Python | 运行什么 | 安装 |
 |---|---|---|---|
 | `robocasa` | 3.10 | 仿真服务、判别 driver、Cosmos 策略服务 | 按 [Cosmos Policy](https://github.com/NVlabs/cosmos-policy) 的 RoboCasa 说明安装，再装 `env/requirements-robocasa.txt` |
 | `pi05` | 3.12 | π0.5 策略服务（LeRobot） | `env/requirements-pi05.txt` |
-| `vllm` | 3.10+ | Qwen 筛子和判别器 | `pip install vllm` |
+| `vllm` | 3.10+ | Qwen 筛子和判别器 | 见上面的 Qwen 步骤 |
 
 ```bash
 # 1) RoboCasa + Cosmos Policy：按 https://github.com/NVlabs/cosmos-policy 的 RoboCasa 说明安装，然后
@@ -135,24 +141,9 @@ pip install -r env/requirements-robocasa.txt
 
 # 2) π0.5
 python3.12 -m venv .venvs/pi05 && .venvs/pi05/bin/pip install -r env/requirements-pi05.txt
-
-# 3) Qwen 用的 vLLM
-python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
-
-# 4) 让 Spotter 找到上面的安装位置
-cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 ```
 
 > **注意**：无显示器的 MuJoCo 渲染需要支持 EGL 的 NVIDIA GPU（`MUJOCO_GL=egl`，已在 `env/env.sh` 中设置）。
-
--->
-
-**Qwen 筛子和判别器。** vLLM 单独一个环境，再准备本地的 `env/env.sh`：
-
-```bash
-python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
-cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
-```
 
 **RoboTwin 2.0。** Spotter 可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
 （aloha-agilex 双臂，SAPIEN 3，50 个任务，`demo_randomized` 场景）上，族名为 `robotwin`。
@@ -180,44 +171,6 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满�
 
 ## 📦 模型准备
 
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [weights]
-
-**1）下载权重。**
-
-```bash
-huggingface-cli download DAVIAN-Robotics/pi05-robocasa-H50         --local-dir checkpoints/pi05-robocasa-H50
-huggingface-cli download nvidia/Cosmos-Policy-RoboCasa-Predict2-2B --local-dir checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B
-huggingface-cli download Qwen/Qwen3.8-27B-FP8                      --local-dir checkpoints/Qwen3.8-27B-FP8
-```
-
-国内用户也可以从 [ModelScope](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8) 下载 Qwen。
-
-**2）下载后的目录。**
-
-```text
-checkpoints/
-├── pi05-robocasa-H50/                        # model.safetensors、config.json、policy_*processor*、tokenizer/
-├── Cosmos-Policy-RoboCasa-Predict2-2B/       # Cosmos-Policy-RoboCasa-Predict2-2B.pt、robocasa_t5_embeddings.pkl 等
-└── Qwen3.8-27B-FP8/
-```
-
-**3）在 `env/env.sh` 中设置：**
-
-```bash
-export PI05_CHECKPOINT=$PWD/checkpoints/pi05-robocasa-H50
-export COSMOS_CHECKPOINT=$PWD/checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B/Cosmos-Policy-RoboCasa-Predict2-2B.pt
-export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
-export VLLM_VENV=$PWD/.venvs/vllm
-```
-
-**4）1-shot 设置用的示例库（可选，151 MB）。**
-
-```bash
-curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
-```
-
--->
-
 **1）Qwen 判别器和筛子。**
 
 ```bash
@@ -231,7 +184,36 @@ export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
 export VLLM_VENV=$PWD/.venvs/vllm
 ```
 
-**2）RoboTwin 2.0。** 策略是 pi0.5 权重
+**2）RoboCasa。** 下载 π0.5 和 Cosmos Policy：
+
+```bash
+huggingface-cli download DAVIAN-Robotics/pi05-robocasa-H50         --local-dir checkpoints/pi05-robocasa-H50
+huggingface-cli download nvidia/Cosmos-Policy-RoboCasa-Predict2-2B --local-dir checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B
+```
+
+下载后的目录：
+
+```text
+checkpoints/
+├── pi05-robocasa-H50/                        # model.safetensors、config.json、policy_*processor*、tokenizer/
+├── Cosmos-Policy-RoboCasa-Predict2-2B/       # Cosmos-Policy-RoboCasa-Predict2-2B.pt、robocasa_t5_embeddings.pkl 等
+└── Qwen3.8-27B-FP8/
+```
+
+然后在 `env/env.sh` 中设置：
+
+```bash
+export PI05_CHECKPOINT=$PWD/checkpoints/pi05-robocasa-H50
+export COSMOS_CHECKPOINT=$PWD/checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B/Cosmos-Policy-RoboCasa-Predict2-2B.pt
+```
+
+1-shot 设置需要 RoboCasa 示例库（151 MB）：
+
+```bash
+curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
+```
+
+**3）RoboTwin 2.0。** 策略是 pi0.5 权重
 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)，放在 RoboTwin 树里的
 `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/`（见[环境配置](#-环境配置)）。
 1-shot 设置需要把 RoboTwin 示例库（33 MB）下载到 `recovery_explore/fewshot_bank/robotwin/`：
@@ -245,11 +227,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 ## 🧭 仿真资源与评测集
 
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [assets]
-
 **RoboCasa 资源**随上面 Cosmos Policy 的 RoboCasa 安装步骤一起装好。
-
--->
 
 **RoboTwin 2.0 资源**随 RoboTwin 本体一起安装（见[环境配置](#-环境配置)）。
 
@@ -257,15 +235,12 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | 文件 | 集数 | 用途 |
 |---|---:|---|
+| `episode_sets/sall500.txt` | 1,200 | 论文的 RoboCasa 评测：24 个任务 × 编号 0–49，seed 500 |
+| `episode_sets/s500q96.txt` | 96 | RoboCasa 调试用子集，每个任务 4 集 |
 | `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0：50 个任务 × 10 集 |
 | `episode_sets/rt500.txt` | 500 | 发布结果所用的 RoboTwin 2.0 评测集：在 `rt50x10n` 基础上，把当前仿真环境里无法开局的集替换为同任务下一个能开局的集 |
 
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [episode sets]
-
-RoboCasa 评测集：`episode_sets/sall500.txt`（1200 集，论文的 RoboCasa 评测：24 个任务 × 编号 0–49，seed 500）和 `episode_sets/s500q96.txt`（96 集，调试用子集）。
-经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
-
--->
+RoboCasa 的经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
 
 ## 🚀 用发布的权重评测
 
@@ -279,8 +254,6 @@ curl -s http://127.0.0.1:8301/v1/models        # 检查
 ```
 
 卡少时少写几张（如 `--gpus 0`），并在运行前 `export QWEN_PORTS=8301`。
-
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [evaluation]
 
 ### RoboCasa
 
@@ -304,10 +277,6 @@ bash spotter.sh run pi05 sall500 --lanes 8
 bash spotter.sh summary
 ```
 
--->
-
-<!-- ROBOCASA-HIDDEN [evaluation, direct driver call]
-
 <details>
 <summary>直接调用 driver</summary>
 
@@ -326,8 +295,6 @@ ALLOW_RESET=0 MAX_RESETS=0 FEWSHOT=0 LEARN=0 CTRL_ONLY=0 SKIP_CONTROL=0 \
 
 driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 run 的所有 lane 从同一个队列领取 episode，结果数达到 `TARGET` 后各 lane 自动结束。
 </details>
-
--->
 
 ### RoboTwin 2.0
 
@@ -368,11 +335,13 @@ bash spotter.sh summary
 由于每次运行都有随机因素，这些结果和论文略有差异。我们把逐集结果（每集的画面、判别器提示词和回复）上传到了 ModelScope：
 [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
-**运行选项**（`bash spotter.sh run <策略族> [SET] [选项]`）：
+### 运行选项
+
+`bash spotter.sh run <策略族> [SET] [选项]`，两个仿真器通用：
 
 | 选项 | 含义 |
 |---|---|
-| `SET` | `smoke`（1 集，默认）、`rt500` 或 `rt50x10n`（RoboTwin 2.0，500 集），或每行一个 `任务:种子:编号` 的文件 |
+| `SET` | `smoke`（1 集，默认）；RoboCasa：`s500q96`、`sall500`；RoboTwin 2.0：`rt500`、`rt50x10n`；或每行一个 `任务:种子:编号` 的文件 |
 | `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
 | `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
 | `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
@@ -387,9 +356,7 @@ bash spotter.sh summary
 | **对照组（Control）** | 只有策略，不调用判别器。 |
 | **实验组（Treatment）** | 策略加判别器，可按需干预。 |
 
-`spotter.sh run robotwin` 使用[配置参考](#-配置参考)里 RoboTwin 那一列的设置，每一项都可以用环境变量覆盖。
-
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [paper reproduction and lesson library]
+`spotter.sh run <策略族>` 使用[配置参考](#-配置参考)里对应那一列的设置，每一项都可以用环境变量覆盖。
 
 ## 📊 复现论文结果
 
@@ -431,8 +398,6 @@ ENGINE=api LEARN=1 ALLOW_RESET=1 MAX_RESETS=5 bash spotter.sh run cosmos <seed 1
 python3 recovery_explore/cli/fewshot_build.py --family cosmos --seed 195 --out recovery_explore/fewshot_bank
 ```
 
--->
-
 ## 🔌 接入你自己的具身模型
 
 Spotter 从不训练策略，所以接入新的具身模型只需要部署服务并注册：
@@ -462,30 +427,11 @@ recovery_explore/runs_<RUN>_<策略>/
 
 ```bash
 bash spotter.sh summary            # 所有 run
-bash spotter.sh summary robotwin_rt50x10n
+bash spotter.sh summary pi05_sall500
+bash spotter.sh summary robotwin_rt500
 ```
 
 ## 🧩 配置参考
-
-| 设置 | RoboTwin 2.0 · pi0.5 |
-|---|---:|
-| `FAMILY_OVERRIDE` | `robotwin` |
-| 每块步数 | 16 |
-| `WINDOW`（判别窗口，单位：块） | 2 |
-| `RT_TEL_CHUNKS` | 10 |
-| `STEP_BUDGET_SCALE`（对照组和 Spotter 相同） | `1.8` |
-| `SCREEN` / `SCREEN_CONFIRM2` | `1` / `1` |
-| `MAX_INTERVENTIONS` | 5 |
-| `ALLOW_RESET` / `MAX_RESETS`（不回档） | `0` / `0` |
-| `ENGINE` / `MODEL` | `qwen` / `qwen38` |
-| `QWEN_KEEP_TURNS` / `COMPACT_AT` | 10 / 40000 |
-| `FEWSHOT` | `1`（`--one-shot`，需要 RoboTwin 示例库） |
-| `QWEN_THINK_BUDGET`（修复回合） | 5000 |
-| 策略服务端口 / 程序 | 9100 / `recovery_explore/robotwin_policy_server.py` |
-
-`spotter.sh run robotwin` 和 `robotwin_eval.sh` 会使用这些取值；每一项都可以用环境变量覆盖。
-
-<!-- ROBOCASA-HIDDEN: RoboCasa instructions are hidden while the rendering fix is validated (see the status note at the top). Remove this comment wrapper to restore them. [configuration tables]
 
 | 设置 | RoboCasa · Cosmos | RoboCasa · pi0.5 | RoboTwin 2.0 · pi0.5 |
 |---|---:|---:|---:|
@@ -498,6 +444,8 @@ bash spotter.sh summary robotwin_rt50x10n
 | 策略服务端口 | 8800 | 8900 | 9100 |
 | 策略服务 | `python -m rpc.server`（上游 Cosmos Policy） | `python -m rpc.policy_server_pi05` | `recovery_explore/robotwin_policy_server.py` |
 
+`spotter.sh run <策略族>` 使用对应那一列的取值，`robotwin_eval.sh` 使用 RoboTwin 2.0 那一列并加上 `--one-shot`，与发布结果一致；每一项都可以用环境变量覆盖。下表是共用参数，“论文取值”指 RoboCasa 的设置，上表的分策略族取值优先。
+
 | 参数 | 论文取值 | 作用 |
 |---|---:|---|
 | `STEP_BUDGET_SCALE` | `1.8` | 步数预算倍率，对照组和实验组必须相同。 |
@@ -509,8 +457,6 @@ bash spotter.sh summary robotwin_rt50x10n
 | `COMPACT_AT` | `110000` | Qwen 对话压缩阈值（token）。 |
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
-
--->
 
 Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `5000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
 
@@ -547,6 +493,7 @@ EOF
 - [RoboCasa](https://robocasa.ai)：我们评测所用的仿真基准和场景资源。
 - [Cosmos Policy](https://github.com/NVlabs/cosmos-policy)：发布的 RoboCasa 权重及其策略服务。
 - [π0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) 与 [LeRobot](https://github.com/huggingface/lerobot)：RoboCasa 上的 π0.5 权重以及加载它的库。
+- [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) 与 [RoboTwin 2.0 的 pi0.5 权重](https://huggingface.co/motus-robotics/pi0.5_robotwin2)：我们评测所用的双臂仿真基准和策略权重。
 - [Qwen](https://huggingface.co/Qwen) 与 [vLLM](https://github.com/vllm-project/vllm)：本地部署的筛子和判别器。
 - [RPent](https://github.com/RLinf/RPent)：`recovery_explore/` 中部分代码改编自它（Apache-2.0，见 `THIRD_PARTY_NOTICES.md`）。
 
