@@ -89,7 +89,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
 - [输出](#-输出) · [配置参考](#-配置参考)
-- [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
+- [致谢](#-致谢) · [许可证](#-许可证) · [联系方式](#-联系方式) · [引用](#-引用)
 
 ## 📂 文件结构
 
@@ -500,6 +500,10 @@ EOF
 ## 📜 许可证
 
 本项目以 [MIT 许可证](LICENSE) 发布。`recovery_explore/` 中有部分文件改编自 RPent，仍遵循 Apache License 2.0，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 📬 联系方式
+
+对代码或论文有任何问题，欢迎发邮件联系 Qichao Zhao：[zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn)。
 
 ## 📖 引用
 

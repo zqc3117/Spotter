@@ -95,7 +95,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 - [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
 - [Outputs](#-outputs) · [Configuration Reference](#-configuration-reference)
-- [Acknowledgements](#-acknowledgements) · [License](#-license) · [Citation](#-citation)
+- [Acknowledgements](#-acknowledgements) · [License](#-license) · [Contact](#-contact) · [Citation](#-citation)
 
 ## 📂 File Structure
 
@@ -528,6 +528,10 @@ task/seed/episode, not only by aggregate success rate.
 This project is released under the [MIT License](LICENSE). Some files in
 `recovery_explore/` are adapted from RPent and remain under the Apache License 2.0; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## 📬 Contact
+
+If you have any questions about the code or the paper, please email Qichao Zhao at [zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn).
 
 ## 📖 Citation
 
