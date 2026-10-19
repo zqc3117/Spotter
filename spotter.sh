@@ -107,8 +107,8 @@ cmd_run() {
   local queue_src
   case "$set" in
     smoke) queue_src="" ;;
-    s500q96|sall500|rt50x5q|rt50x10n|rt500|rt_ctlcheck12) queue_src="recovery_explore/episode_sets/$set.txt" ;;
-    *) [ -f "$set" ] || die "unknown set '$set' (smoke | s500q96 | sall500 | rt50x5q | rt50x10n | rt500 | path to a TASK:SEED:EPISODE file)"; queue_src="$set" ;;
+    s500q96|sall500|rt50x5q|rt50x10n|rt500|rt150|rt_ctlcheck12) queue_src="recovery_explore/episode_sets/$set.txt" ;;
+    *) [ -f "$set" ] || die "unknown set '$set' (smoke | s500q96 | sall500 | rt50x5q | rt50x10n | rt500 | rt150 | path to a TASK:SEED:EPISODE file)"; queue_src="$set" ;;
   esac
   [ -n "$run" ] || run="${fam}_$(basename "${set%.txt}")"
   local ctrl_only=0 skip_ctrl=0

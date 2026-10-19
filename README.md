@@ -81,9 +81,10 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 > **Simulators.** Spotter runs on both [RoboCasa](#robocasa) and [RoboTwin 2.0](#robotwin-20). RoboTwin 2.0 has a
 > one-command evaluation, `bash robotwin_eval.sh` (see [Evaluation](#-evaluation-with-released-checkpoints)).
 >
-> **RoboTwin 2.0 full logs** (the complete release: policy alone, Spotter and a VLM-led agent, each with Qwen and GPT,
-> on the same 150 episodes, with every episode's frames, prompts and replies):
-> [spotter-robotwin-150](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
+> **RoboTwin 2.0 results and full logs** (every episode's frames, prompts and replies):
+> [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10) (policy alone vs. Spotter-Qwen)
+> and [150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150) (policy alone, Spotter and a
+> VLM-led agent, each with Qwen and GPT).
 
 ## 📑 Index
 
@@ -115,7 +116,7 @@ Spotter/
 │   ├── cli/                          # screener, judge channels (Qwen / GPT), harness, few-shot tools
 │   ├── memory_bank/                  # frozen library of 77 general lessons (RoboCasa)
 │   ├── memory_bank_robotwin_noreset/ # the RoboTwin 2.0 lessons
-│   ├── episode_sets/                 # sall500.txt (paper, 1,200 episodes) · s500q96.txt (96, debugging) · rt50x10n.txt (RoboTwin 2.0, 500)
+│   ├── episode_sets/                 # sall500.txt (paper, 1,200) · s500q96.txt (96, debugging) · rt500.txt / rt150.txt (RoboTwin 2.0)
 │   ├── fewshot_bank/                 # (downloaded) worked examples for the 1-shot setting; robotwin/ for RoboTwin 2.0
 │   └── runs_<RUN>_<family>/          # (generated) results.jsonl, per-lane logs, frames shown to the judge
 ├── rpc/                              # π0.5 policy server, RPC protocol, RoboCasa rollout and collection scripts
@@ -248,6 +249,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 | `episode_sets/s500q96.txt` | 96 | RoboCasa debugging subset, 4 episodes per task |
 | `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0: 50 tasks × 10 episodes |
 | `episode_sets/rt500.txt` | 500 | RoboTwin 2.0 evaluation used for the released results: `rt50x10n` with the episodes that cannot be built in the current simulator replaced by the next buildable episode of the same task |
+| `episode_sets/rt150.txt` | 150 | RoboTwin 2.0 comparison with a VLM-led agent: 50 tasks × 3 episodes, a subset of `rt500` |
 
 RoboCasa lessons and worked examples were learned on seed 195, disjoint from the test seed.
 
@@ -334,9 +336,23 @@ bash spotter.sh summary
 ```
 </details>
 
-**Reference results.** The released RoboTwin 2.0 records cover 150 episodes (50 tasks × 3, listed in
-`episode_set.txt` of the dataset) at a 1.8× step budget, 1-shot, with Qwen thinking in the repair turns up to
-5000 tokens. Every arm runs on the same episodes:
+**Results with this code.** We re-ran the Spotter arms on RoboTwin 2.0 with this version of the code, on the 500
+episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone on the same 500 episodes:
+
+| Arm | Success |
+|---|---:|
+| Policy alone (pi0.5) | 240 / 500 (48.0%) |
+| Spotter-Qwen, `QWEN_THINK_BUDGET=2000` | 252 / 500 (50.4%) |
+| Spotter-Qwen, `QWEN_THINK_BUDGET=5000` (default) | 267 / 500 (53.4%) |
+
+Because every run involves randomness, these numbers differ somewhat from the paper. We have uploaded the
+per-episode results, with every episode's frames, judge prompts and replies, to ModelScope:
+[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
+
+**Comparison with a VLM-led agent (150 episodes).** On `rt150` (50 tasks × 3 episodes, a subset of `rt500`), with the
+same settings (1.8× step budget, 1-shot, Qwen thinking in the repair turns up to 5000 tokens), we also ran Spotter with
+GPT and a VLM-led agent with both LLMs; every arm runs on the same episodes. The VLM-led agent drives the episode turn by
+turn and calls the policy as a tool; its code is not part of this release.
 
 | Arm | LLM | Success |
 |---|---|---:|
@@ -346,9 +362,8 @@ bash spotter.sh summary
 | VLM-led agent | Qwen3.8-27B-FP8 | 63 / 150 (42.0%) |
 | VLM-led agent | GPT-6-astra | 84 / 150 (56.0%) |
 
-Every run involves randomness, so a re-run will differ by a few points. The complete per-episode records of all five
-arms, with every episode's frames, judge prompts and replies, are on ModelScope for reference:
-[spotter-robotwin-150](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
+The complete records of all five arms, with every episode's frames, prompts and replies, are on ModelScope:
+[150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ### Run options
 
@@ -356,7 +371,7 @@ arms, with every episode's frames, judge prompts and replies, are on ModelScope 
 
 | Option | Meaning |
 |---|---|
-| `SET` | `smoke` (1 episode, default); RoboCasa: `s500q96`, `sall500`; RoboTwin 2.0: `rt500`, `rt50x10n`; or a file with one `TASK:SEED:EPISODE` per line |
+| `SET` | `smoke` (1 episode, default); RoboCasa: `s500q96`, `sall500`; RoboTwin 2.0: `rt500`, `rt150`, `rt50x10n`; or a file with one `TASK:SEED:EPISODE` per line |
 | `--lanes N` | episodes run in parallel; lane `N` runs its own simulation service on port `8450+N` |
 | `--sim-gpus N` | GPUs the simulation services share, GPU `0..N-1` (default: all) |
 | `--arm` | `both` (control and Spotter on each episode, default), `treat` (Spotter only), `ctrl` (policy only) |
@@ -515,8 +530,9 @@ How the judge is paced has its own switches, all off or conservative by default:
 | `FIRST_IV_FRAC` | `35` | The first intervention waits until the policy has closed on nothing at least once, or the episode is this far (%) into its step budget. `0` disables the gate. |
 | `MONITOR_AFTER_BUDGET` | `1` | Keep calling the judge once the intervention budget is spent, for the record. `0` stops calling it. |
 
-Changing `STEP_BUDGET_SCALE`, `WINDOW` or the policy family changes the experiment; compare runs by matched
-task/seed/episode, not only by aggregate success rate.
+Changing `STEP_BUDGET_SCALE`, `WINDOW` or the policy family changes the experiment. Compare runs only on the same
+episode set; because the policies' rollouts are not bit-reproducible, compare aggregate success rates rather than
+single episodes.
 
 ## 🙏 Acknowledgements
 
