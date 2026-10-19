@@ -75,8 +75,10 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 > **仿真器。** Spotter 同时支持 [RoboCasa](#robocasa) 和 [RoboTwin 2.0](#robotwin-20)。RoboTwin 2.0 可以一条命令
 > `bash robotwin_eval.sh` 跑完整个评测（见[用发布的权重评测](#-用发布的权重评测)）。
 >
-> **RoboTwin 2.0 的实验结果和完整记录**（对照组 vs. Spotter-Qwen，每集的画面、提示词和回复）：
-> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+> **RoboTwin 2.0 的实验结果和完整记录**（每集的画面、提示词和回复）：
+> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)（策略独跑 vs. Spotter-Qwen），
+> 以及 [150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)（策略独跑、Spotter 和 VLM 主导的智能体，
+> 后两者各用 Qwen 和 GPT）。
 
 ## 📑 目录
 
@@ -108,7 +110,7 @@ Spotter/
 │   ├── cli/                          # 筛子、判别通道（Qwen / GPT）、harness、few-shot 工具
 │   ├── memory_bank/                  # 冻结的 77 条通用经验（RoboCasa）
 │   ├── memory_bank_robotwin_noreset/ # RoboTwin 2.0 的经验
-│   ├── episode_sets/                 # sall500.txt（论文，1200 集）· s500q96.txt（96 集，调试用）· rt50x10n.txt（RoboTwin 2.0，500 集）
+│   ├── episode_sets/                 # sall500.txt（论文，1200 集）· s500q96.txt（96 集，调试用）· rt500.txt / rt150.txt（RoboTwin 2.0）
 │   ├── fewshot_bank/                 # （需下载）1-shot 设置用的示例；robotwin/ 子目录给 RoboTwin 2.0
 │   └── runs_<RUN>_<策略>/            # （运行时生成）results.jsonl、各 lane 日志、给判别器看的画面
 ├── rpc/                              # π0.5 策略服务、RPC 协议、RoboCasa rollout 与采集脚本
@@ -239,6 +241,7 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 | `episode_sets/s500q96.txt` | 96 | RoboCasa 调试用子集，每个任务 4 集 |
 | `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0：50 个任务 × 10 集 |
 | `episode_sets/rt500.txt` | 500 | 发布结果所用的 RoboTwin 2.0 评测集：在 `rt50x10n` 基础上，把当前仿真环境里无法开局的集替换为同任务下一个能开局的集 |
+| `episode_sets/rt150.txt` | 150 | RoboTwin 2.0 上与 VLM 主导智能体的对比：50 个任务 × 3 集，是 `rt500` 的子集 |
 
 RoboCasa 的经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
 
@@ -335,13 +338,28 @@ bash spotter.sh summary
 由于每次运行都有随机因素，这些结果和论文略有差异。我们把逐集结果（每集的画面、判别器提示词和回复）上传到了 ModelScope：
 [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
 
+**与 VLM 主导智能体的对比（150 集）。** 在 `rt150`（50 个任务 × 3 集，是 `rt500` 的子集）上，用相同设置（1.8 倍步数上限、
+1-shot、Qwen 只在修复轮思考、上限 5000 token），我们还跑了 GPT 版 Spotter，以及分别用两种模型的 VLM 主导智能体；
+所有组都在同一批集上运行。VLM 主导的智能体逐轮驱动整个任务、把策略当作工具调用，它的代码不在本次发布中。
+
+| 组 | 模型 | 成功 |
+|---|---|---:|
+| 策略独跑（pi0.5） | – | 72 / 150（48.0%） |
+| Spotter | Qwen3.8-27B-FP8 | 79 / 150（52.7%） |
+| Spotter | GPT-6-astra | 84 / 150（56.0%） |
+| VLM 主导的智能体 | Qwen3.8-27B-FP8 | 63 / 150（42.0%） |
+| VLM 主导的智能体 | GPT-6-astra | 84 / 150（56.0%） |
+
+五个组的完整记录（每集的画面、提示词和回复）都在 ModelScope 上：
+[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)。
+
 ### 运行选项
 
 `bash spotter.sh run <策略族> [SET] [选项]`，两个仿真器通用：
 
 | 选项 | 含义 |
 |---|---|
-| `SET` | `smoke`（1 集，默认）；RoboCasa：`s500q96`、`sall500`；RoboTwin 2.0：`rt500`、`rt50x10n`；或每行一个 `任务:种子:编号` 的文件 |
+| `SET` | `smoke`（1 集，默认）；RoboCasa：`s500q96`、`sall500`；RoboTwin 2.0：`rt500`、`rt150`、`rt50x10n`；或每行一个 `任务:种子:编号` 的文件 |
 | `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
 | `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
 | `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
@@ -486,7 +504,7 @@ EOF
 | `FIRST_IV_FRAC` | `35` | 第一次干预要等到策略至少抓空过一次，或者已经用掉这个百分比的步数预算。`0` 表示不设这个门槛。 |
 | `MONITOR_AFTER_BUDGET` | `1` | 干预次数用完后继续调用判别器，只做记录。`0` 表示不再调用。 |
 
-改动 `STEP_BUDGET_SCALE`、`WINDOW` 或策略种类都相当于换了实验；比较不同 run 时应按任务/种子/编号逐集配对，而不只看总成功率。
+改动 `STEP_BUDGET_SCALE`、`WINDOW` 或策略种类都相当于换了实验。比较不同 run 时只在同一个评测集上比较；由于策略的运行不能逐比特复现，应比较总成功率，而不是单集结果。
 
 ## 🙏 致谢
 
