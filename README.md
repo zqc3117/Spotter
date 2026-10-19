@@ -551,7 +551,24 @@ This project is released under the [MIT License](LICENSE). Some files in
 
 ## 📬 Contact
 
-If you have any questions about the code or the paper, please email Qichao Zhao at [zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn).
+Have a question, want to share results, or just follow development? Join us:
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="assets/community/wechat_group.png" alt="Spotter WeChat group QR code" width="200"><br>
+      <b>WeChat Group</b><br>
+      Scan to join
+    </td>
+    <td align="center" width="50%">
+      <a href="https://discord.gg/dcsEJHE4Pk"><img src="assets/community/discord_qr.png" alt="Spotter Discord QR code" width="200"></a><br>
+      <b>Discord</b><br>
+      <a href="https://discord.gg/dcsEJHE4Pk">discord.gg/dcsEJHE4Pk</a>
+    </td>
+  </tr>
+</table>
+
+You can also ask questions and share ideas in [GitHub Discussions](https://github.com/zqc3117/Spotter/discussions), report bugs in [Issues](https://github.com/zqc3117/Spotter/issues), or email Qichao Zhao at [zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn).
 
 ## 📖 Citation
 

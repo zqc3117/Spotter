@@ -521,7 +521,24 @@ EOF
 
 ## 📬 联系方式
 
-对代码或论文有任何问题，欢迎发邮件联系 Qichao Zhao：[zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn)。
+有问题、想分享结果，或者想关注项目进展？欢迎加入交流群：
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="assets/community/wechat_group.png" alt="Spotter 微信交流群二维码" width="200"><br>
+      <b>微信交流群</b><br>
+      扫码加入
+    </td>
+    <td align="center" width="50%">
+      <a href="https://discord.gg/dcsEJHE4Pk"><img src="assets/community/discord_qr.png" alt="Spotter Discord 二维码" width="200"></a><br>
+      <b>Discord</b><br>
+      <a href="https://discord.gg/dcsEJHE4Pk">discord.gg/dcsEJHE4Pk</a>
+    </td>
+  </tr>
+</table>
+
+也可以在 [GitHub Discussions](https://github.com/zqc3117/Spotter/discussions) 提问和交流想法，在 [Issues](https://github.com/zqc3117/Spotter/issues) 反馈 bug，或发邮件联系 Qichao Zhao：[zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn)。
 
 ## 📖 引用
 
