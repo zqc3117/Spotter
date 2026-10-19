@@ -334,18 +334,20 @@ bash spotter.sh summary
 ```
 </details>
 
-**Results with this code.** We re-ran the Spotter arms on RoboTwin 2.0 with this version of the code, on the 500
-episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone on the same 500 episodes:
+**Reference results.** The released RoboTwin 2.0 records cover 150 episodes (50 tasks × 3, listed in
+`episode_set.txt` of the dataset) at a 1.8× step budget, 1-shot, with Qwen thinking in the repair turns up to
+5000 tokens. Every arm runs on the same episodes:
 
-| Arm | Success |
-|---|---:|
-| Policy alone (pi0.5) | 240 / 500 (48.0%) |
-| Spotter-Qwen, `QWEN_THINK_BUDGET=2000` | 252 / 500 (50.4%) |
-| Spotter-Qwen, `QWEN_THINK_BUDGET=5000` (default) | 267 / 500 (53.4%) |
+| Arm | LLM | Success |
+|---|---|---:|
+| Policy alone (pi0.5) | – | 72 / 150 (48.0%) |
+| Spotter | Qwen3.8-27B-FP8 | 79 / 150 (52.7%) |
+| Spotter | GPT-6-astra | 84 / 150 (56.0%) |
+| VLM-led agent | Qwen3.8-27B-FP8 | 63 / 150 (42.0%) |
+| VLM-led agent | GPT-6-astra | 84 / 150 (56.0%) |
 
-Because every run involves randomness, these numbers differ somewhat from the paper. The complete per-episode
-records (policy alone, Spotter-Qwen, Spotter-GPT, and a VLM-led agent with Qwen and with GPT, on the same 150 episodes,
-with every episode's frames, judge prompts and replies) are on ModelScope for reference:
+Every run involves randomness, so a re-run will differ by a few points. The complete per-episode records of all five
+arms, with every episode's frames, judge prompts and replies, are on ModelScope for reference:
 [spotter-robotwin-150](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ### Run options
