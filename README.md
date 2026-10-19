@@ -83,6 +83,9 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 >
 > **RoboTwin 2.0 results and full logs** (control vs. Spotter-Qwen, every episode's frames, prompts and replies):
 > [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
+>
+> **Spotter vs. a VLM-led agent on RoboTwin 2.0** (policy alone, Spotter and a VLM-led agent, each with Qwen and GPT,
+> same episodes, full logs): [150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ## 📑 Index
 
@@ -345,6 +348,9 @@ episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone
 Because every run involves randomness, these numbers differ somewhat from the paper. We have uploaded the
 per-episode results, with every episode's frames, judge prompts and replies, to ModelScope:
 [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
+The 150 episodes behind the comparison with a VLM-led agent (policy alone, Spotter-Qwen, Spotter-GPT, VLM-led agent
+with Qwen and with GPT), with the same full records, are here:
+[150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ### Run options
 
