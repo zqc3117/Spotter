@@ -112,6 +112,7 @@ Spotter/
 │   ├── robotwin_intervention.py      # RoboTwin repair primitives (dual arm); robodojo_intervention.py is its base
 │   ├── robotwin_policy_server.py     # RoboTwin pi0.5 policy server (openpi websocket protocol)
 │   ├── primitives.py                 # motion primitives the judge composes repairs from
+│   ├── grasp_aim.py                  # RoboCasa `aim` step: finds the object in the wrist depth image and plans the grasp
 │   ├── JUDGE_BRIEF_V7.md             # judge prompt; BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md add task-family notes
 │   ├── cli/                          # screener, judge channels (Qwen / GPT), harness, few-shot tools
 │   ├── memory_bank/                  # frozen library of 77 general lessons (RoboCasa)
@@ -529,6 +530,16 @@ How the judge is paced has its own switches, all off or conservative by default:
 | `MISS_GRACE` | `2` | Windows the policy gets to retry on its own after closing on nothing, before the judge may take over. |
 | `FIRST_IV_FRAC` | `35` | The first intervention waits until the policy has closed on nothing at least once, or the episode is this far (%) into its step budget. `0` disables the gate. |
 | `MONITOR_AFTER_BUDGET` | `1` | Keep calling the judge once the intervention budget is spent, for the record. `0` stops calling it. |
+| `LATE_IV_FRAC` | `45` (RoboCasa), `0` (RoboTwin 2.0) | No *first* intervention once the episode is this far (%) into its step budget; later interventions are unaffected. `0` disables it. |
+| `PLAN_ROUNDS` | `5` (RoboCasa), `3` (RoboTwin 2.0) | Plan segments the judge may send within one intervention. |
+
+**RoboCasa repair steps.** Besides the motion primitives, the RoboCasa judge has an `aim` step: the robot looks down with
+its wrist depth camera, finds the object near the last missed grasp (or near a point the judge names), grasps it across
+its short side, lifts slightly to check the hold, and reports `held`, `closed_empty`, `slipped`, `no_object`, `too_wide`,
+`blocked` or `step_cap`. A hand-back right after a held grasp keeps the gripper closed (`{"op": "policy", "hold": true}`
+does the same explicitly). Pixel targets are `[row, col]` normalized to 0–1000 within one camera image (`PIXEL_FRAME=1000`;
+`512` takes raw pixels), and Qwen gets each camera as its own image for pointing (`QWEN_POINT_TILES=1`). Everything the
+judge uses comes from the cameras and the robot's own joint and gripper readings.
 
 Changing `STEP_BUDGET_SCALE`, `WINDOW` or the policy family changes the experiment. Compare runs only on the same
 episode set; because the policies' rollouts are not bit-reproducible, compare aggregate success rates rather than

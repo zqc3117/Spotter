@@ -106,6 +106,7 @@ Spotter/
 │   ├── robotwin_intervention.py      # RoboTwin 修复原语（双臂）；robodojo_intervention.py 是它的基类
 │   ├── robotwin_policy_server.py     # RoboTwin 的 pi0.5 策略服务（openpi websocket 协议）
 │   ├── primitives.py                 # 判别器组合修复计划所用的运动原语
+│   ├── grasp_aim.py                  # RoboCasa 的 `aim` 步骤：在腕部深度图里找到物体并规划抓取
 │   ├── JUDGE_BRIEF_V7.md             # 判别器提示词；BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md 是分任务类型的补充
 │   ├── cli/                          # 筛子、判别通道（Qwen / GPT）、harness、few-shot 工具
 │   ├── memory_bank/                  # 冻结的 77 条通用经验（RoboCasa）
@@ -503,6 +504,14 @@ EOF
 | `MISS_GRACE` | `2` | 策略抓空之后，先给它自己重试的窗口数，之后判别器才可以接管。 |
 | `FIRST_IV_FRAC` | `35` | 第一次干预要等到策略至少抓空过一次，或者已经用掉这个百分比的步数预算。`0` 表示不设这个门槛。 |
 | `MONITOR_AFTER_BUDGET` | `1` | 干预次数用完后继续调用判别器，只做记录。`0` 表示不再调用。 |
+| `LATE_IV_FRAC` | `45`（RoboCasa）、`0`（RoboTwin 2.0） | 步数预算用掉这个百分比之后，不再开始*第一次*干预；之后的干预不受影响。`0` 表示关闭。 |
+| `PLAN_ROUNDS` | `5`（RoboCasa）、`3`（RoboTwin 2.0） | 一次干预里判别器最多可以发几段计划。 |
+
+**RoboCasa 的修复步骤。** 除了运动原语，RoboCasa 的判别器还有一个 `aim` 步骤：机器人用腕部深度相机向下看，找到上次抓空位置附近
+（或判别器指定位置附近）的物体，沿物体短边抓取，稍微抬起检查是否抓牢，然后报告 `held`、`closed_empty`、`slipped`、`no_object`、
+`too_wide`、`blocked` 或 `step_cap`。抓牢后紧接着交还给策略时，夹爪会保持闭合（也可以显式写 `{"op": "policy", "hold": true}`）。
+像素目标写成单张相机图像内 0–1000 归一化的 `[行, 列]`（`PIXEL_FRAME=1000`；设为 `512` 则按原始像素），并且每个相机单独作为一张图给
+Qwen 用来指点（`QWEN_POINT_TILES=1`）。判别器用到的信息全部来自相机和机器人自身的关节、夹爪读数。
 
 改动 `STEP_BUDGET_SCALE`、`WINDOW` 或策略种类都相当于换了实验。比较不同 run 时只在同一个评测集上比较；由于策略的运行不能逐比特复现，应比较总成功率，而不是单集结果。
 
