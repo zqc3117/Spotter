@@ -81,11 +81,9 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 > **Simulators.** Spotter runs on both [RoboCasa](#robocasa) and [RoboTwin 2.0](#robotwin-20). RoboTwin 2.0 has a
 > one-command evaluation, `bash robotwin_eval.sh` (see [Evaluation](#-evaluation-with-released-checkpoints)).
 >
-> **RoboTwin 2.0 results and full logs** (control vs. Spotter-Qwen, every episode's frames, prompts and replies):
-> [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
->
-> **Spotter vs. a VLM-led agent on RoboTwin 2.0** (policy alone, Spotter and a VLM-led agent, each with Qwen and GPT,
-> same episodes, full logs): [150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
+> **RoboTwin 2.0 full logs** (the complete release: policy alone, Spotter and a VLM-led agent, each with Qwen and GPT,
+> on the same 150 episodes, with every episode's frames, prompts and replies):
+> [spotter-robotwin-150](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ## 📑 Index
 
@@ -345,12 +343,10 @@ episodes of `rt500` (1.8× step budget, 1-shot); the control is the policy alone
 | Spotter-Qwen, `QWEN_THINK_BUDGET=2000` | 252 / 500 (50.4%) |
 | Spotter-Qwen, `QWEN_THINK_BUDGET=5000` (default) | 267 / 500 (53.4%) |
 
-Because every run involves randomness, these numbers differ somewhat from the paper. We have uploaded the
-per-episode results, with every episode's frames, judge prompts and replies, to ModelScope:
-[50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10).
-The 150 episodes behind the comparison with a VLM-led agent (policy alone, Spotter-Qwen, Spotter-GPT, VLM-led agent
-with Qwen and with GPT), with the same full records, are here:
-[150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
+Because every run involves randomness, these numbers differ somewhat from the paper. The complete per-episode
+records (policy alone, Spotter-Qwen, Spotter-GPT, and a VLM-led agent with Qwen and with GPT, on the same 150 episodes,
+with every episode's frames, judge prompts and replies) are on ModelScope for reference:
+[spotter-robotwin-150](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
 
 ### Run options
 
