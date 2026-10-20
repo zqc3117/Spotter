@@ -101,7 +101,13 @@ SPLIT=${SPLIT:-B}
 INTERVENE_BUDGET=${INTERVENE_BUDGET:-8}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
 # Max plan segments per intervention (each segment = one execute_plan + one model call).
 # 3 segments * 8 steps is enough for "open -> back to the miss point -> descend -> close -> lift and verify" plus one correction.
-PLAN_ROUNDS=${PLAN_ROUNDS:-3}
+# RoboCasa (cosmos / pi05): 5 segments (its segments often stop at a checkpoint after 1-2 steps), the late-first-intervention
+# cut-off and per-camera images for Qwen's pointing. RoboTwin 2.0 / RoboDojo keep their released settings.
+if [ "$FAMILY" = robotwin ] || [ "$FAMILY" = robodojo ]; then
+  PLAN_ROUNDS=${PLAN_ROUNDS:-3}; LATE_IV_FRAC=${LATE_IV_FRAC:-0}
+else
+  PLAN_ROUNDS=${PLAN_ROUNDS:-5}; LATE_IV_FRAC=${LATE_IV_FRAC:-45}; export QWEN_POINT_TILES=${QWEN_POINT_TILES:-1}
+fi
 # Whether rewinding is allowed. With ALLOW_RESET=0 reset_window is never called and retry does not appear among the model's
 # options -- it must finish within one intervention or give up. This measures what "starting over" is really worth:
 # in episodes with reset, 6 of 11 plan segments came after a reset, and a single episode took 40 min wall clock.
@@ -345,7 +351,7 @@ restart_svc(){
       for p in \$pids; do kill -9 \$p 2>/dev/null; done
       sleep 1
     done
-    MAX_RESETS=$MAX_RESETS STEP_BUDGET_SCALE=$STEP_BUDGET_SCALE setsid bash $SVC_LAUNCH $SVC_ARGS > /tmp/judge_svc_$PORT.out 2>&1 </dev/null & disown; sleep 14"
+    MAX_RESETS=$MAX_RESETS STEP_BUDGET_SCALE=$STEP_BUDGET_SCALE STEP_TOTAL=${STEP_TOTAL:-0} setsid bash $SVC_LAUNCH $SVC_ARGS > /tmp/judge_svc_$PORT.out 2>&1 </dev/null & disown; sleep 14"
   local tries=6
   if [ "$SIM_MANAGED" = 1 ]; then
     # The service is kept alive by a supervisor loop on the simulation host. Each arm needs a fresh process
@@ -745,6 +751,148 @@ Each step is one of:
   {"op": "nudge",  "dxyz": [dx, dy, dz], "gripper": "hold"}
   {"op": "lift",   "dz": 0.08, "gripper": "hold"}
   {"op": "rotate", "drot": [rx, ry, rz], "gripper": "hold"}
+  {"op": "policy", "chunks": 2}            (add "hold": true to keep the fingers shut while the policy moves)
+  {"op": "retreat"}
+  {"op": "retreat", "to": "pre_grasp"}
+  {"op": "aim", "z": "mid"}            (optional "hint": [row, col] of the object in the newest WRIST picture, 0-1000)
+
+Two things the simulator still does on every plan (a plan that breaks one is rejected
+whole, nothing runs, and the error names the step): any manual close must be followed by
+a lift in the same plan, so a grasp is always verified by seeing whether the object comes
+up; and on microwave, coffee-machine and stove tasks a move_to farther than 6 cm from the
+current pose is refused, because the controller runs away there. Nothing else is refused:
+you may close the fingers yourself in your very first repair, and a step that missed,
+overshot or was clipped does not lock you out -- re-plan from where the hand ended up.
+
+retreat with "to": "pre_grasp" goes somewhere better than the takeover pose: the
+point on the approach the policy itself took, just before its last empty closure,
+with the fingers opened. The telemetry names it when it exists. From there a policy
+hand-back of two chunks lets the policy redo the grasp on its own. Give the policy
+that chance at most ONCE per missed grasp: look at the object first (the miss may have
+moved it), then {"op": "retreat", "to": "pre_grasp"}, then {"op": "policy", "chunks": 2}.
+If the object is no longer where the policy was reaching (it slid, tipped or rolled),
+aim the OPEN fingers at its current position instead, with a pixel move_to (dz 0.05
+above it), then hand back.
+
+GRASP IT YOURSELF AFTER ONE FAILED HAND-BACK. Re-opening the fingers and handing back
+from almost the same pose reproduces the same miss: the policy that missed once will
+miss again. As soon as a hand-back in this episode has been followed by another empty
+closure on the same object -- or the telemetry already lists two or more empty
+closures in this episode -- stop handing back for the close and do the grasp yourself.
+
+Do it with the aim step: [{"op": "aim", "z": "mid"}, {"op": "policy", "chunks": 2}].
+aim is the grasping routine of the robot itself: it looks down from above the last missed grasp
+with the wrist depth camera (and the two fixed cameras), finds the support surface and
+the things standing on it, puts the OPEN hand over the object nearest the miss with the
+fingers across its short side, descends to half its height, closes, and lifts 3 cm to
+check. Its result tells you what happened: "held" (the object came up -- the plan goes
+on, so hand back right after it; that hand-back keeps the fingers shut by itself, because a
+policy handed an object tends to open its hand and drop it);
+"closed_empty" or "slipped" (fingers opened again); "no_object" (it saw nothing standing
+near the miss); "too_wide" (the thing does not fit between the fingers); "blocked" (the
+descent hit something above the grasp height); "step_cap" (it used its step allowance
+without getting there -- the arm could not reach that pose; change the approach). If several things stand near the miss
+and aim may pick the wrong one, add "hint": [row, col] -- the point on the object in the newest
+WRIST picture, normalized 0-1000 like every pixel target; aim then looks at that object. "z":
+"top" grasps closer to the top (a tall bottle), or give metres above the surface.
+aim works best on objects standing on a counter, a turntable or in a sink. Inside a
+cabinet, where the hand reaches in sideways, it often answers no_object or too_wide;
+there, grasp by hand instead: aim the OPEN fingers at the CURRENT position of the
+object with a pixel move_to (dz 0.05 above it, check the target lands within about
+20 cm of the hand -- a target farther away means the pixel was misread), nudge onto it,
+close, lift 0.05, and hand back with {"op": "policy", "chunks": 2, "hold": true}. After a failed aim, change something (a hint, a
+different z, or the by-hand grasp) -- never send the same aim twice.
+
+STALLED ON A FIXTURE (doors, drawers, knobs, buttons, levers, faucets). When the hand
+has pressed against the fixture for several windows -- the telemetry shows commanded
+motion far above the distance actually travelled and the fixture does not change in
+the pictures -- the policy will not get out of it by itself, and handing it back from
+the same pose puts it straight back into the stall. Make the motion yourself: back off
+2-3 cm, re-aim at the handle, edge or knob from the newest images, and move it the way
+the task needs in two or three short nudges (a door swings about its hinge, a drawer
+slides straight out or in, a knob turns, a button is pressed with a short push), then
+check the pictures and hand back.
+
+A plan that only hands back ([{"op": "policy", ...}]), or only retreats and hands
+back from the pose that was already failing, changes nothing: if that is all you
+would do, answer ok instead and save the steps. Never send the same plan shape twice
+for the same fault -- the second one must do something the first did not.
+
+retreat without "to" is the soft undo: one action that servos the hand back to the pose it had
+when you took over and puts the fingers back the way they were, dropping anything
+your repair picked up. Nothing else in the scene is touched. Execution stops after
+it so you can look. Use it when a repair has failed and you want to hand the policy
+back its own pose, or before a second attempt on a different line. It is a Cartesian
+move like any other, so from a configuration that has just blown up it can blow up
+too; then open the fingers and stop.
+
+ONCE THE OBJECT IS IN THE HAND, KEEP IT. After aim answered "held" (or your own close and
+lift brought the object up), the job is no longer the grasp but the carry. Do not retreat
+then -- retreat drops what the repair picked up -- and do not open the fingers before the
+object is over its destination. Two ways to finish: hand back again with
+{"op": "policy", "chunks": 2, "hold": true} so the policy moves the arm while the fingers
+stay shut, as long as the hand is heading towards the destination; or carry it yourself:
+lift 0.05, move it clear of the cabinet or microwave (out towards the robot first, then
+across), move_to a pixel on the destination surface with dz 0.08, lower until just above it,
+open the fingers, and hand back. Check the fingers after every step: still partly closed
+and rising with the hand means you still have it.
+
+The policy step hands control back to the robot policy for that many chunks (1 or 2,
+and at most 4 chunks in total across one intervention),
+starting from wherever the arm is now, then stops and shows you what happened. It
+costs one action per chunk. Use it once you have put the hand somewhere workable:
+the policy is usually better at the last few centimetres of a grasp than a string
+of small moves you write, and it is the only step here that can finish the task.
+Where it sits in the plan is your call (2026-09-21): a plan may open with it and two
+hand-backs may sit next to each other. Buying each hand-back with a repair of your own
+is still the better habit -- the controller resumes from the pose that was already
+failing -- but the shape is no longer refused.
+Each chunk handed back, and every simulator step your own moves take, is taken from
+the fixed step budget of the episode, which the policy needs to finish the task.
+Hand back once, at the end of the repair, for one or two chunks -- not as a way to
+see what the policy will do.
+
+A pixel target is a point you pick in ONE camera image; it is unprojected server-side
+through the depth of that camera and then offset by dz metres, so you point at what you see
+instead of computing world coordinates. Give it as [row, col] normalized to 0-1000 within
+that single camera image (0 = top / left edge, 1000 = bottom / right edge), the way you
+normally point at things, and name the camera. Every camera is also given to you as its
+own picture ("primary camera, now", "wrist camera, newest frame", ...): pick the point in
+the newest picture of the camera you name. The reply gives the 3-D point it found; check it
+is on the object and not the counter or the wall behind it.
+
+Execution stops early and hands back to you when: the fingers close on nothing
+(width under 12 mm), a step travels several times the distance you asked for
+(overshoot: the controller is misbehaving in that arm configuration), a servo does
+not reach its target, a move is clipped because it was too far, wrist contact force
+spikes, the action budget or the policy hand-back allowance runs out, or a `lift`
+completes -- that is the checkpoint where you look at whether the object came up
+with the hand. You then get the step-by-step log and fresh images.
+SPEC
+)
+# RoboTwin 2.0 / RoboDojo use the prompt as released; the RoboCasa edits above (aim step, 0-1000 pixel targets, carry
+# guidance) do not apply to them.
+PLAN_SPEC_BASE=$(cat << 'SPEC'
+Answer with ONE json object and nothing else (no prose around it, no code fence):
+
+{"verdict": "ok" | "intervene" | "giveup",
+ "diagnosis": "one or two sentences on what you see",
+ "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the kettle leaves the burner. Omit for ok and giveup.",
+ "plan": []}
+
+- verdict "ok": the policy is coping. plan MUST be empty. Most windows are ok.
+- verdict "intervene": something is wrong that you can fix. plan is 1 to 8 steps,
+  executed IN ORDER by the simulator without asking you again, so write the whole
+  repair, not just its first move.
+- verdict "giveup": beyond rescue. plan MUST be empty. This is final for the episode.
+
+Each step is one of:
+  {"op": "gripper", "state": "open" | "close"}
+  {"op": "move_to", "target": {"xyz": [x, y, z]}, "gripper": "hold" | "open" | "close"}
+  {"op": "move_to", "target": {"pixel": [row, col], "camera": "primary" | "secondary" | "wrist", "dz": 0.05}}
+  {"op": "nudge",  "dxyz": [dx, dy, dz], "gripper": "hold"}
+  {"op": "lift",   "dz": 0.08, "gripper": "hold"}
+  {"op": "rotate", "drot": [rx, ry, rz], "gripper": "hold"}
   {"op": "policy", "chunks": 2}
   {"op": "retreat"}
   {"op": "retreat", "to": "pre_grasp"}
@@ -820,6 +968,7 @@ SPEC
 # intervention mixin mirrors the RoboDojo one: no pixel targets, no pre_grasp anchor, no force
 # sensor, normalised gripper opening -- and gets its own bimanual addendum below.
 if [ "$FAMILY" = robodojo ] || [ "$FAMILY" = robotwin ]; then
+  PLAN_SPEC="$PLAN_SPEC_BASE"
   # First strip three things from PLAN_SPEC that do not exist on RoboDojo, then append the addendum. Keeping them is worse than removing them:
   # the judge writes plans exactly as the prompt says, and they fail every time. That is how the first real intervention was lost --
   # Qwen followed the spec to the letter with {"target": {"pixel": ...}}, two plan segments in a row errored, and the episode was judged giveup.
@@ -1153,6 +1302,9 @@ while true; do
   [ "$(echo "$BEG" | jget ok)" != "True" ] && { log "  episode-begin failed, skipping: $(echo "$BEG" | head -c 200)"; continue; }
   INSTR=$(echo "$BEG" | jget instruction); TOTC=$(echo "$BEG" | jget total_chunks)
   MAXSTEPS=$(echo "$BEG" | jget max_steps); case "$MAXSTEPS" in ""|None) MAXSTEPS=0;; esac
+  # The first-intervention gate keeps measuring progress against the scaled (x1.8) cap even when STEP_TOTAL lifts the
+  # episode cap, so up to that cap the judge behaves exactly as in a scaled run (2026-10-02, user: Spotter-H at 3000 steps).
+  MAXSTEPS_GATE=$(echo "$BEG" | jget scaled_max_steps); case "$MAXSTEPS_GATE" in ""|None) MAXSTEPS_GATE=$MAXSTEPS;; esac
   if [ -n "$REUSE_CONTROL" ] && [ -f "$REUSE_CONTROL" ]; then
     # The baseline lookup cannot go by cell name alone: the control arm is only reproducible for "the same policy family + the same window granularity".
     # m2astra tripped on granularity (control --num-chunks 8 vs treatment WINDOW=2: different request_id sequences
@@ -1302,6 +1454,22 @@ PYA
     # Memory retrieval: match symptom/applies_when using the task instruction plus current-state keywords, take 3.
     # Do not stuff in the whole index -- 23 entries of prose is a wall the model skips.
     NGRASP=$(echo "$ADV" | jget grasp_attempts)
+    # the working-hand line above exists only in RoboTwin telemetry, so on RoboCasa NGW stayed 0 and
+    # the first-intervention gate read "has not missed yet" after two empty closures, holding every first repair to 35%
+    # of the budget. Single-arm: the episode's empty closures (grasp_attempts, from the gripper reading) are the working hand's.
+    if [ "$FAMILY" != robotwin ] && ! grep -q '^Empty closures on the working hand' "${TELF:-/dev/null}" 2>/dev/null; then
+      NGW=$(python3 -c "
+import sys,json,ast
+v=sys.argv[1]
+try:
+    x=json.loads(v)
+except Exception:
+    try: x=ast.literal_eval(v)
+    except Exception: x=v
+try: print(len(x) if isinstance(x,(list,tuple)) else int(float(x)))
+except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGW=${NGW:-0}
+      if [ "$NGW" -gt "$PREV_NGW" ] 2>/dev/null; then MISS_W=$W; PREV_NGW=$NGW; fi
+    fi
     # Situation words depend on task type: for mechanism tasks the situation is "did the fixture change, did the hand reach the control", not grasping;
     # grasp words used to be applied to everything, so old gripper/grasp entries always filled the slots and none of the 19 lessons from two rounds was ever injected
     # (103 of the 122 prompts in l24c carried the same closed-gripper entry).
@@ -1360,13 +1528,15 @@ print(1 if any(float(c.get('cmd_gripper') if c.get('cmd_gripper') is not None el
     # Rule: only one miss recorded and less than 2 windows since the first miss -> do not judge; a second miss,
     # or two windows after the miss (whatever was going to happen has happened), calls the judge.
     NGN=$(python3 -c "
-import sys,json
+import sys,json,ast
 v=sys.argv[1]
 try:
-    x=json.loads(v); print(len(x) if isinstance(x,list) else int(x))
+    x=json.loads(v)
 except Exception:
-    try: print(int(float(v)))
-    except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGN=${NGN:-0}
+    try: x=ast.literal_eval(v)
+    except Exception: x=v
+try: print(len(x) if isinstance(x,(list,tuple)) else int(float(x)))
+except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGN=${NGN:-0}
     if [ "$NGN" -ge 1 ] && [ -z "${FIRSTMISS_W:-}" ]; then FIRSTMISS_W=$W; fi
     if [ "$MKIND" = pnp ] && [ "$NGN" -eq 1 ] && [ -n "${FIRSTMISS_W:-}" ] && [ $((W - FIRSTMISS_W)) -lt 1 ]; then
       log "  window $W PnP gate: policy just missed once, letting it retry on its own, not judging"
@@ -1658,10 +1828,22 @@ print(json.dumps(l))")
     if [ "$V" = "intervene" ] && [ "$NINT" = 0 ] && [ "${FIRST_IV_FRAC:-35}" -gt 0 ] 2>/dev/null; then
       _frac=$(python3 -c "
 import sys
-ct, mx = float('${CT:-0}' or 0), float('${MAXSTEPS:-0}' or 0)
+ct, mx = float('${CT:-0}' or 0), float('${MAXSTEPS_GATE:-${MAXSTEPS:-0}}' or 0)
 print(int(100 * ct / mx) if mx > 0 else 100)" 2>/dev/null)
       if [ "$NGW" = "0" ] && [ "${_frac:-100}" -lt "${FIRST_IV_FRAC:-35}" ] 2>/dev/null; then
         log "  window $W verdict intervene, but it is the first of the episode, progress only ${_frac}%, and the working hand has not missed yet -> observing first"
+        NEARLY=$((NEARLY+1)); V=ok
+      fi
+    fi
+    # first interventions that started after window 20 (~40% of the budget) went
+    # 0/8 while control recovered 3/8 on its own -- too few steps left to finish a repair, and they take away the policy own
+    # late retries. A FIRST intervention past LATE_IV_FRAC of the step budget is not started; follow-ups are unaffected.
+    if [ "$V" = "intervene" ] && [ "$NINT" = 0 ] && [ "${LATE_IV_FRAC:-0}" -gt 0 ] 2>/dev/null; then
+      _lfrac=$(python3 -c "
+ct, mx = float('${CT:-0}' or 0), float('${MAXSTEPS_GATE:-${MAXSTEPS:-0}}' or 0)
+print(int(100 * ct / mx) if mx > 0 else 0)" 2>/dev/null)
+      if [ "${_lfrac:-0}" -ge "${LATE_IV_FRAC:-0}" ] 2>/dev/null; then
+        log "  window $W verdict intervene, but it would be the first intervention at ${_lfrac}% of the budget (>= ${LATE_IV_FRAC:-0}%) -> leaving it to the policy"
         NEARLY=$((NEARLY+1)); V=ok
       fi
     fi
@@ -1913,9 +2095,10 @@ for e in d.get('executed') or []:
     if e.get('arm') and op!='policy': bits.append(f\"arm {e.get('arm')}\")
     for k in ('target','dxyz','dz','drot','state'):
         if e.get(k) is not None: bits.append(f'{k}={e[k]}')
+    if e.get('aim'): a_=e['aim']; bits.append(f\"AIM {str(a_.get('result')).upper()}: target {a_.get('target_xyz')}, chosen {a_.get('chosen')} ({a_.get('how')}), {a_.get('blobs')} things seen, yaw {a_.get('yaw_deg')} deg, ended {a_.get('final_dist_m')} m from the target, width after close {a_.get('width_after_close_mm')} mm, after lift {a_.get('width_after_lift_mm')} mm\")
     if e.get('error'): bits.append('ERROR ' + str(e['error']))
     elif op=='policy':
-        bits.append(f\"{e.get('chunks')} chunk(s) handed back, policy chunks left this intervention {e.get('policy_chunks_left')}\")
+        bits.append(f\"{e.get('chunks')} chunk(s) handed back{' with the fingers held shut' if e.get('hold') else ''}, policy chunks left this intervention {e.get('policy_chunks_left')}\")
     elif op=='gripper':
         bits.append(f\"opening now {e.get('opening_norm')}\" + (' -- CLOSED ON NOTHING' if e.get('closed_empty') else ''))
     else:
@@ -1957,6 +2140,7 @@ for e in d.get('executed') or []:
     if e.get('overshoot'): bits.append(f\"OVERSHOOT: asked {e.get('requested_cm')} cm, travelled {e.get('moved_cm')} cm\")
     if e.get('policy_chunks_left') is not None: bits.append(f\"policy chunks left this intervention {e.get('policy_chunks_left')}\")
     if e.get('retreat'): r=e['retreat']; bits.append(f\"RETREAT to takeover pose: fingers {r.get('fingers')}, {r.get('final_dist_m')} m off, wrist {r.get('rot_before_deg')} -> {r.get('rot_after_deg')} deg off\")
+    if e.get('aim'): a_=e['aim']; bits.append(f\"AIM {str(a_.get('result')).upper()}: target {a_.get('target_xyz')}, chosen {a_.get('chosen')} ({a_.get('how')}), {a_.get('blobs')} things seen, yaw {a_.get('yaw_deg')} deg, ended {a_.get('final_dist_m')} m from the target, width after close {a_.get('width_after_close_mm')} mm, after lift {a_.get('width_after_lift_mm')} mm\")
     if e.get('error'): bits.append('ERROR ' + str(e['error']))
     print('  ' + '; '.join(str(b) for b in bits))
 st=(d.get('state') or {})
