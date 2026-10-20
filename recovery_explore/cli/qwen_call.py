@@ -20,6 +20,44 @@ def _image_part(path: str) -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
 
 
+POINT_TILES = os.environ.get("QWEN_POINT_TILES", "0") == "1"   # the driver turns it on for RoboCasa
+CAMS = ("primary", "secondary", "wrist")
+
+
+def _png_part(im) -> dict:
+    import io
+    b = io.BytesIO(); im.save(b, "PNG")
+    return {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()}}
+
+
+def _image_parts_split(path: str) -> list:
+    """2026-10-17: Qwen points in 0-1000 coordinates of ONE image; on a stitched picture its column arithmetic
+    fails (a 215 px miss on a 512 tile). So the checkpoint picture (three 512 tiles side by side) goes as three
+    labelled camera images, and a window montage (rows primary/secondary/wrist, columns oldest -> newest, 256 tiles,
+    stacked windows oldest first) is kept whole and followed by the newest frame of each camera on its own."""
+    if not POINT_TILES:
+        return [_image_part(path)]
+    try:
+        from PIL import Image
+        im = Image.open(path).convert("RGB")
+    except Exception:
+        return [_image_part(path)]
+    W, H = im.size
+    if W == 3 * H:  # checkpoint: primary | secondary | wrist
+        t = H; parts = []
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, now:"})
+            parts.append(_png_part(im.crop((i * t, 0, (i + 1) * t, t))))
+        return parts
+    if W % 4 == 0 and H % (3 * (W // 4)) == 0:  # montage(s): 3 rows x 4 columns of square tiles
+        t = W // 4; top = H - 3 * t; parts = [_image_part(path)]
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, newest frame (point targets in this picture):"})
+            parts.append(_png_part(im.crop((3 * t, top + i * t, 4 * t, top + (i + 1) * t))))
+        return parts
+    return [_image_part(path)]
+
+
 def _trim(msgs: list) -> list:
     """Keep the first turn as is; strip images from and truncate middle turns; keep the last KEEP_RECENT_TURNS turns as is."""
     if len(msgs) <= 2 + 2 * KEEP_RECENT_TURNS:
@@ -64,7 +102,7 @@ def main() -> None:
     if not content:
         content = [{"type": "text", "text": prompt}]
     if a.image and os.path.exists(a.image):
-        content.append(_image_part(a.image))
+        content.extend(_image_parts_split(a.image))
 
     if a.resume and os.path.exists(a.resume):
         tpath = a.resume

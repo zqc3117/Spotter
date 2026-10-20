@@ -57,8 +57,15 @@ INCLUDED, so a privileged read is always visible in the audit trail.
 
 from __future__ import annotations
 
+# repair-method rules are tendencies stated in the prompt, not server-side rejections.
+# HARD_METHOD_RULES=1 restores the Spotter-H behaviour (reject plans that start with a policy step, two policy steps
+# in a row, or a manual close before a hand-back on PnP tasks).
+import os as _os
+HARD_METHOD_RULES = _os.environ.get("HARD_METHOD_RULES", "0") == "1"
+
 import argparse
 import json
+import math
 import os
 import socket
 import sys
@@ -70,7 +77,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 try:  # package import (normal: run as `python -m recovery_explore.env_service`)
-    from recovery_explore import cosmos_call, snapshot_bridge
+    from recovery_explore import cosmos_call, render_guard, snapshot_bridge
     from recovery_explore.primitives import RecoveryPrimitives
     from recovery_explore.rpc_transport import (
         MainThreadServeMixin,
@@ -79,6 +86,7 @@ try:  # package import (normal: run as `python -m recovery_explore.env_service`)
     )
 except ImportError:  # pragma: no cover - direct `python env_service.py`
     import cosmos_call  # type: ignore[no-redef]
+    import render_guard  # type: ignore[no-redef]
     import snapshot_bridge  # type: ignore[no-redef]
     from primitives import RecoveryPrimitives  # type: ignore[no-redef]
     from rpc_transport import (  # type: ignore[no-redef]
@@ -111,6 +119,12 @@ COSMOS_NUM_CANDIDATES = 4       # best-of-K width, fixed server-side (cosmos fam
 MOVE_TO_STEP_CLIP = 0.02        # metres per servo step
 MOVE_TO_MAX_STEPS = 200
 MOVE_TO_TOL = 0.012             # metres
+
+
+def _servo_steps(dist_m: float, cap: int) -> int:
+    """a servo that cannot reach its target (blocked, unreachable pose) ran to its cap -- 600 steps for
+    one move_to, 631 for one retreat -- and ate the episode's budget. Time out at 2.5x the steps the distance needs + 40."""
+    return int(min(cap, 40 + 2.5 * float(dist_m) / MOVE_TO_STEP_CLIP))
 LIFT_STEP_CLIP = 0.02
 LIFT_MAX_STEPS = 80
 GRIPPER_STEPS = 10
@@ -136,6 +150,16 @@ def _grip_empty_w_for(task) -> float:
 GRIP_NOTEMPTY_W = 0.018   # above this: no longer fully closed (hysteresis band to avoid re-triggering on jitter)
 ANCHOR_TOL_M = 0.08       # target within this radius of a "visited point" lifts the per-action translation limit
 RECALL_MAX_M = 0.60       # per-action limit once lifted
+MOVE_TO_FREE_MAX_M = float(os.environ.get("MOVE_TO_FREE_MAX_M", "0.40"))   # move_to safety bound (was MAX_STEP_M = 5 cm)
+AIM_MAX_BOTTOM_M = float(os.environ.get("AIM_MAX_BOTTOM_M", "0.04"))   # blobs must stand on the plane
+AIM_MIN_PIX_FIXED = int(os.environ.get("AIM_MIN_PIX_FIXED", "40"))     # min pixels for a fixed-camera blob
+AIM_RELOOK_R_M = float(os.environ.get("AIM_RELOOK_R_M", "0.30"))   # re-look at fixed-camera candidates this close
+# Qwen answers points as [row, col] normalized to 0-1000 of one image, not raw pixels; read as
+# 512-frame pixels every target landed at about twice its position (median 60-70 cm from the hand). Pixel inputs from the
+# model (move_to pixel, aim hint) are in this frame and scaled to the render size here. 512 = raw pixels (the old contract).
+PIXEL_FRAME = float(os.environ.get("PIXEL_FRAME", "1000"))
+AIM_MAX_TILT_DEG = float(os.environ.get("AIM_MAX_TILT_DEG", "25"))   # aim turns the wrist camera down past this tilt
+AIM_MAX_STEPS = int(os.environ.get("AIM_MAX_STEPS", "320"))   # one aim op may spend at most this many sim steps
 # Max resets per episode (back to the intervention-start state, with a fresh budget). 0 = no rollback at all --
 # used to see "can the model get it right in one go". launch_svc.sh passes it in as an environment variable.
 MAX_RESETS = int(os.environ.get("MAX_RESETS", "5"))
@@ -195,6 +219,10 @@ _BLOWUP_MOVE_TO_MAX_M = 0.06     # in these tasks move_to is short-range only (l
 _FAULT_STOPS = ("servo_missed", "overshoot", "move_clipped")
 
 
+class AimStepCap(RuntimeError):
+    """one aim op ran past AIM_MAX_STEPS simulator steps (a servo that does not converge)."""
+
+
 class EpisodeStepBudgetExhausted(RuntimeError):
     """The episode's step clock is at its budget while a judge window is charging it.
 
@@ -215,7 +243,7 @@ def _repair_gate_check(task: str, plan, policy_chunks_so_far: int, faults_this_w
     R3 A fault already occurred in this intervention: later plans may only use gripper / policy (no Cartesian actions, incl. retreat).
     """
     ops = [str(st.get("op")) for st in plan if isinstance(st, dict)]
-    if faults_this_window > 0:
+    if HARD_METHOD_RULES and faults_this_window > 0:   # method rule, not a safety limit
         for i, op in enumerate(ops):
             if op not in ("gripper", "policy"):
                 return i, ("a step in this intervention already missed, overshot or was clipped; "
@@ -230,7 +258,7 @@ def _repair_gate_check(task: str, plan, policy_chunks_so_far: int, faults_this_w
             state = str(st.get("state") or st.get("action") or "")
             if state != "close":
                 continue
-            if policy_chunks_so_far <= 0 and "policy" not in ops[:i]:
+            if HARD_METHOD_RULES and policy_chunks_so_far <= 0 and "policy" not in ops[:i]:
                 return i, ("on a pick-and-place task the first repair is to place the open fingers on a "
                            "good line and hand back to the policy for the close; a manual close is "
                            "allowed only after a hand-back in this intervention has failed. Replace the "
@@ -317,6 +345,11 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         if not 0.1 <= float(step_budget_scale) <= 5.0:
             raise ValueError("step_budget_scale must be in [0.1, 5.0]")
         self._step_budget_scale = float(step_budget_scale)
+        # GL render guard (recovery_explore/render_guard.py): patches robosuite so the render
+        # context leaked by robocasa's hard reset cannot kill the live EGL context when the GC
+        # collects it, and checks every frame handed out. Default-on; RENDER_GUARD=0 disables.
+        render_guard.install()
+        render_guard.set_logger(self._log)
 
         self._env: Any = None
         self._cfg: Any = None
@@ -553,6 +586,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             return str(self._restored.task)
         if self._failure is not None:
             return str(self._failure.task)
+        ep = getattr(self, "_episode", None)
+        if ep and ep.get("task"):  # harness_episode_begin path sets only _episode
+            return str(ep["task"])
         raise RuntimeError("no state loaded: call make_failure or restore_snapshot")
 
     def _origin_timestep(self) -> int:
@@ -666,9 +702,17 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                     f"the episode's step budget is used up ({int(ep['failure_committed_timestep'])} of "
                     f"{int(ep['failure_committed_timestep']) + left} steps, your own moves included); "
                     "nothing more can run in this episode")
-        raw, _reward, _done, _info = env.step(np.asarray(flat_action, dtype=np.float64))
+        cap = getattr(self, "_aim_cap_at", None)
+        if cap is not None and self._step_count >= cap:
+            raise AimStepCap(f"aim used its {AIM_MAX_STEPS} steps")
+        flat_action = np.array(flat_action, dtype=np.float64)
+        if getattr(self, "_grip_hold", False):
+            flat_action[6] = 1.0  # hand-back with the gripper held shut (primitives.GRIPPER_INDEX, +1 = close)
+        raw, _reward, _done, _info = env.step(flat_action)
         self._raw_obs = raw
         self._policy_obs = prepare_observation(raw, self._cfg.flip_images)
+        if self._guard_observation("step"):
+            raw = self._raw_obs  # re-rendered (same simulator state; only the images changed)
         self._step_count += 1
         if charge:
             ep = self._episode
@@ -676,6 +720,47 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             # harness_advance keeps these two equal at the end of every call; so does this.
             self._failure_origin_timestep = int(ep["failure_committed_timestep"])
         return raw
+
+    # ---- render guard glue (recovery_explore/render_guard.py) ------------------
+
+    def _guard_meta(self) -> dict[str, Any]:
+        ep = self._episode or {}
+        return {"episode": f"{ep.get('task')}:{ep.get('seed')}:{ep.get('episode_index')}" if ep else None,
+                "t": int(ep.get("failure_committed_timestep", self._step_count)) if ep else int(self._step_count)}
+
+    def _guard_frames(self, size: int, *, where: str) -> dict[str, np.ndarray]:
+        """``render_camera_512`` behind the render guard: garbage frames are re-rendered after
+        re-binding / rebuilding / recreating the offscreen context (see render_guard.py)."""
+        from cf_bench.vlm_correction_rollout import render_camera_512
+
+        env = self._require_env()
+        flip = self._cfg.flip_images
+        return render_guard.guarded_render(
+            env, lambda: render_camera_512(env, flip_images=flip, size=int(size)),
+            where=where, meta=self._guard_meta())
+
+    def _guard_observation(self, where: str) -> bool:
+        """The policy's own camera observations come from the same offscreen context. If they carry
+        the garbage signature, re-render them (``_get_observations(force_update=True)``: no physics
+        step, same simulator state) through the guard's recovery ladder. Returns True if re-rendered."""
+        if not render_guard.ENABLED or self._raw_obs is None:
+            return False
+        images = render_guard.obs_images(self._raw_obs)
+        if not images:
+            return False
+        if render_guard.VERBOSE:
+            render_guard._emit({"event": "obs", "where": where, "stats": render_guard._stats_str(images),
+                                **self._guard_meta()})
+        if not render_guard.frames_look_bad(images):
+            return False
+        env = self._require_env()
+
+        def rerender() -> dict[str, np.ndarray]:
+            self._refresh_observation()
+            return render_guard.obs_images(self._raw_obs)
+
+        render_guard.guarded_render(env, rerender, where=f"obs/{where}", meta=self._guard_meta())
+        return True
 
     def _primitive_driver(self) -> RecoveryPrimitives:
         if self._primitives is None:
@@ -694,6 +779,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         """
         return {
             "run_id": self._run_id,
+            "render_guard": render_guard.counters(),
             "anchors_jsonl": str(self._anchors_jsonl) if self._anchors_jsonl else None,
             "anchor_id": self._restored.anchor_id if self._restored else None,
             "state_id": self._state_id(),
@@ -786,6 +872,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             self._env, self._cfg = snapshot_bridge.build_env(
                 anchor, run_id=self._run_id, output_dir=self._output_dir
             )
+            render_guard.reap_leaked_contexts(self._env)
             self._env_key = key
         elif key != self._env_key:
             raise RuntimeError(
@@ -851,6 +938,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
@@ -1156,7 +1244,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         target = np.asarray(pose["eef_pos"], dtype=np.float64)
         req = float(np.linalg.norm(target - cur))
         mv = drv.move_to(target, gripper=grip, step_clip=MOVE_TO_STEP_CLIP,
-                         max_steps=MOVE_TO_MAX_STEPS * 3, tol=MOVE_TO_TOL)
+                         max_steps=_servo_steps(req, MOVE_TO_MAX_STEPS * 3), tol=MOVE_TO_TOL)
         self._refresh_observation()
         rot_before, rot_after = self._retreat_rotation(np.asarray(pose["eef_quat"], dtype=np.float64), grip)
         self._refresh_observation()
@@ -1176,32 +1264,56 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         return self._finish_action(out)
 
     def _retreat_rotation(self, target_quat: np.ndarray, grip: float) -> tuple[float | None, float | None]:
-        """Rotate the wrist back to target_quat (xyzw) in a few steps, stopping if the residual stops shrinking. Returns (before, after) residual in degrees."""
+        """Rotate the wrist to target_quat (xyzw) in a few steps, stopping if the residual stops shrinking. Returns (before, after) residual in degrees.
+
+        the rotation action is not a world-frame rotvec (2 of 3 restores never converged; turning the
+        base frame alone fixed only some). Like move_to's position jacobian, the rotation jacobian is measured: three small
+        probe rotations, world rotvec change per unit action, then each step solves for the action. Proprioception only."""
         try:
             from scipy.spatial.transform import Rotation as R
         except Exception:
             return None, None
         drv = self._primitive_driver()
 
+        def quat() -> np.ndarray:
+            return np.asarray(self._obs_value("robot0_eef_quat"), dtype=np.float64)
+
         def residual() -> np.ndarray:
-            q = np.asarray(self._obs_value("robot0_eef_quat"), dtype=np.float64)
-            err = R.from_quat(target_quat) * R.from_quat(q).inv()
-            return err.as_rotvec()
+            return (R.from_quat(target_quat) * R.from_quat(quat()).inv()).as_rotvec()
 
         try:
             rv = residual()
         except Exception:
             return None, None
         before = float(np.degrees(np.linalg.norm(rv)))
+        if np.linalg.norm(rv) < 0.05:
+            return round(before, 1), round(before, 1)
+        probe = 0.12
+        cols = []
+        try:
+            for k in range(3):
+                q0 = quat()
+                e = np.zeros(3); e[k] = probe
+                drv.rotate(e, gripper=grip, max_rad=MAX_STEP_RAD, steps=ROTATE_SUBSTEPS)
+                self._refresh_observation()
+                cols.append((R.from_quat(quat()) * R.from_quat(q0).inv()).as_rotvec() / probe)
+            J = np.stack(cols, axis=1)              # world_rotvec ~= J @ action_rotvec
+            if np.linalg.cond(J) > 50:
+                raise ValueError("rotation jacobian ill-conditioned")
+        except Exception:
+            J = np.eye(3)
+        rv = residual()
         last = float(np.linalg.norm(rv))
-        for _ in range(4):
+        for _ in range(6):
             if last < 0.05:
                 break
-            drv.rotate(rv, gripper=grip, max_rad=MAX_STEP_RAD, steps=ROTATE_SUBSTEPS)
+            a = np.linalg.solve(J, rv)
+            drv.rotate(a, gripper=grip, max_rad=MAX_STEP_RAD, steps=ROTATE_SUBSTEPS)
             self._refresh_observation()
             rv = residual()
             now = float(np.linalg.norm(rv))
-            if now > last * 0.9:   # not converging: wrong frame or blocked by structure, stop rotating
+            if now > last * 0.95:   # not converging: blocked by structure or at a joint limit, stop rotating
+                last = min(last, now)
                 break
             last = now
         return round(before, 1), round(float(np.degrees(last)), 1)
@@ -1514,12 +1626,10 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         with it -- depth is always returned because ``unproject`` needs the same
         map, and there is only one depth camera.
         """
-        from cf_bench.vlm_correction_rollout import render_camera_512
-
         env = self._require_env()
         size = int(self._render_size)
         main_camera = MAIN_CAMERA
-        frames = render_camera_512(env, flip_images=self._cfg.flip_images, size=size)
+        frames = self._guard_frames(size, where="render")
         out: dict[str, Any] = {
             "size": size,
             "rgb": {key: np.ascontiguousarray(value) for key, value in frames.items()},
@@ -1640,7 +1750,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         anchors = [np.asarray(w["xyz"], dtype=np.float64) for w in self._waypoints]
         anchors += [np.asarray(e["eef"], dtype=np.float64) for e in self._grasp_events]
         near = min((float(np.linalg.norm(target - a)) for a in anchors), default=float("inf"))
-        allowance = RECALL_MAX_M if near <= ANCHOR_TOL_M else MAX_STEP_M
+        # no method-level truncation of a move_to (user rule: the server may not cut a move short);
+        # the free allowance is a safety bound only. Short-range fixtures keep their 6 cm limit in _repair_gate_check.
+        allowance = RECALL_MAX_M if near <= ANCHOR_TOL_M else MOVE_TO_FREE_MAX_M
         clipped_to = None
         if dist > allowance:
             target = cur + delta / dist * allowance
@@ -1649,7 +1761,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             np.asarray(target, dtype=np.float64),
             gripper=gripper,
             step_clip=MOVE_TO_STEP_CLIP,
-            max_steps=MOVE_TO_MAX_STEPS * (3 if allowance > MAX_STEP_M else 1),
+            max_steps=_servo_steps(float(np.linalg.norm(np.asarray(target) - cur)), MOVE_TO_MAX_STEPS * (3 if allowance > MAX_STEP_M else 1)),
             tol=MOVE_TO_TOL,
         )
         return self._finish_action({
@@ -1726,6 +1838,186 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         return self._finish_action({**result, "action": action,
                                     "step_count": int(self._step_count)})
 
+    # ---- aim, the depth-camera grasp aimer (grasp_aim.py) ------------------------------------
+    # Ported from the judge-repair-v4-close branch: the robot's own depth images (wrist + the two fixed cameras, the same
+    # unprojection a pixel move_to uses -- no privileged state) find the support plane and the things standing on it; the open
+    # hand is put over the chosen thing at grasp height with the fingers across its short side, closed, and lifted 3 cm to see
+    # whether the thing came up. One plan action; every simulator step is charged to the episode clock as usual.
+    _AIM_ENTRY_KEYS = ("result", "how", "chosen", "blobs", "plane_z", "target_xyz", "yaw_deg", "final_dist_m",
+                       "width_after_close_mm", "width_after_lift_mm", "sim_steps",
+                       "blobs_dropped", "views", "look_xyz", "looked_twice", "relooked", "hint_xyz", "tilt_deg", "tilt_after_deg", "tilt_error")
+    _AIM_OK = ("held",)
+
+    def aim(self, step: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Grasp the object the robot's depth cameras see near the last missed grasp (or near the hand).
+
+        ``hint`` = [row, col] in a camera's native 512 frame of the WRIST camera names the object; without it the
+        thing nearest the last empty closure (else the fingertips) is taken. ``z`` = "mid" | "top" | metres above the
+        support. Results: held (closed and the object came up); closed_empty / slipped (fingers opened again);
+        no_object; too_wide; blocked (the descent stopped more than 1.5 cm above the grasp height).
+        """
+        self._require_env()
+        try:
+            from recovery_explore import grasp_aim as ga
+        except ImportError:  # pragma: no cover
+            import grasp_aim as ga  # type: ignore[no-redef]
+        # in cabinets / microwaves the nearest blob is often a wall or shelf edge.
+        # Prefer a finger-sized thing within 25 cm of the last grasp, search at most 30 cm, footprint > 22 cm = furniture.
+        ga.NEAR_REF_M = float(os.environ.get("AIM_NEAR_REF_M", "0.25"))
+        ga.BLOB_R_WIDE_M = float(os.environ.get("AIM_R_WIDE_M", "0.30"))
+        ga.BLOB_MAX_XY_M = float(os.environ.get("AIM_MAX_XY_M", "0.22"))
+        # depth blobs read 0.5-1 cm wide; RoboCasa objects measured 7.5-7.9 cm were refused as
+        # too_wide by the 0.4 cm-per-side margin. Accept up to the full 8 cm opening.
+        ga.WIDTH_MARGIN_M = float(os.environ.get("AIM_WIDTH_MARGIN_M", "0.0"))
+        step = dict(step or {})
+        hint = step.get("hint")
+        hint_xyz = None
+        if hint is not None:
+            # the hint is a point in the wrist image the model is looking at NOW (0-1000 frame, see
+            # PIXEL_FRAME). aim moves the camera before it looks, so turn the hint into a 3-D point first and
+            # aim at the thing nearest that point.
+            size = int(self._render_size)
+            hr = int(min(size - 1, max(0, round(float(list(hint)[0]) * size / PIXEL_FRAME))))
+            hc = int(min(size - 1, max(0, round(float(list(hint)[1]) * size / PIXEL_FRAME))))
+            hint_xyz = np.asarray(self.unproject(hr, hc, camera="wrist")["world_xyz"], dtype=np.float64)
+            hint = None
+        z_mode = step.get("z") or "mid"
+        if isinstance(z_mode, str):
+            z_mode = z_mode.strip().lower()
+        hover = float(step.get("hover", ga.HOVER_M))
+        self._spend_action("aim")
+        saved_budget, saved_used = self._round_budget, self._round_used
+        self._round_budget = None          # the sub-moves below are part of this one action
+        n0 = int(self._step_count)
+        self._aim_cap_at = n0 + AIM_MAX_STEPS
+        out: dict[str, Any] = {"hint": hint, "z": z_mode, "blobs": 0, "plane_z": None, "chosen": None,
+                               "how": None, "yaw_deg": None, "target_xyz": None}
+        from rpc.run_remote_robocasa_collect import _gripper_aperture
+        width = lambda: float(_gripper_aperture(self._policy_obs))
+        eef = lambda: np.asarray(self._obs_value("robot0_eef_pos"), dtype=np.float64)
+
+        def finish(result: str) -> dict[str, Any]:
+            e, t = eef(), out.get("target_xyz")
+            out.update({"result": result, "ok": result in self._AIM_OK,
+                        "final_dist_m": (round(float(np.linalg.norm(e - np.asarray(t))), 4) if t else None),
+                        "sim_steps": int(self._step_count) - n0, "step_count": int(self._step_count)})
+            return out
+        try:
+            if width() < 0.03:
+                self.gripper("open")
+            miss = self._grasp_events[-1] if self._grasp_events else None
+            e0 = eef()
+            ref = np.asarray(miss["eef"], dtype=np.float64) if miss else e0
+            if hint_xyz is not None:
+                ref = hint_xyz
+                out["hint_xyz"] = [round(float(v), 3) for v in hint_xyz]
+            look = np.array([ref[0], ref[1], max(float(ref[2]) + ga.LOOK_FROM_M, float(e0[2]))])
+            if float(np.linalg.norm(look - e0)) > 0.01:
+                self.move_to(look.tolist(), gripper="open")
+            # with the gripper pointing sideways (a cabinet / shelf approach) the wrist camera saw
+            # the shelf, not the surface below ("no_object"). Turn the approach axis (eef local z) straight down first.
+            try:
+                from scipy.spatial.transform import Rotation as _R
+                q = np.asarray(self._obs_value("robot0_eef_quat"), dtype=np.float64)
+                cur = _R.from_quat(q)
+                a = cur.as_matrix()[:, 2]
+                tilt = float(np.degrees(np.arccos(np.clip(np.dot(a, [0.0, 0.0, -1.0]), -1.0, 1.0))))
+                out["tilt_deg"] = round(tilt, 1)
+                if tilt > AIM_MAX_TILT_DEG:
+                    align, _ = _R.align_vectors([[0.0, 0.0, -1.0]], [a])
+                    before, after = self._retreat_rotation((align * cur).as_quat(), -1.0)
+                    out["tilt_after_deg"] = after
+            except Exception as exc:  # never let the re-orientation itself kill the aim
+                if isinstance(exc, AimStepCap):
+                    raise
+                out["tilt_error"] = f"{type(exc).__name__}: {exc}"[:100]
+            size = int(self._render_size)
+
+            def look_now():
+                views, errs = [], {}
+                for cam in ("wrist",) + tuple(k for k in DEFAULT_CAMERA_KEYS if k != "wrist"):
+                    try:
+                        views.append((cam, self._render_depth(cam, size), self._pixel_to_world_matrix(cam, size)))
+                    except Exception as exc:
+                        errs[cam] = f"{type(exc).__name__}: {exc}"[:120]
+                sc = ga.analyse_views(views, ref_xyz=ref, hand_xyz=eef())
+                out["views"] = {**{n: v for n, v in sc.get("views", {}).items()}, **{n: "render failed " + e for n, e in errs.items()}}
+                out["look_xyz"] = [round(float(v), 3) for v in eef()]
+                return sc
+
+            scene = look_now()
+            if scene["plane"] is None:
+                # no support plane in any view -- look again from 10 cm higher (wider wrist view) once
+                self.move_to((eef() + np.array([0.0, 0.0, 0.10])).tolist(), gripper="open")
+                out["looked_twice"] = True
+                scene = look_now()
+            # a graspable thing stands on the support plane, and a third-person
+            # view's 12-18 pixel fragment (often floating 16-23 cm up: a shelf lip, a door edge) is noise.
+            # Those closed on nothing or slipped 9 of 10 times; wrist-view blobs with real area held 4 of 4.
+            def keep(bs):
+                return [b for b in bs if b.bottom <= AIM_MAX_BOTTOM_M
+                        and (getattr(b, "view", "wrist") == "wrist" or b.pixels >= AIM_MIN_PIX_FIXED)]
+
+            plane, raw = scene["plane"], scene["blobs"]
+            blobs = keep(raw)
+            out["blobs_dropped"] = len(raw) - len(blobs)
+            if plane is not None and not blobs:
+                # the wrist sees nothing at the last grasp point but a fixed camera sees a
+                # small candidate elsewhere -- move the wrist camera over the nearest candidate and look again;
+                # it is grasped only if that second look confirms it.
+                cands = [b for b in raw if b.bottom <= AIM_MAX_BOTTOM_M
+                         and float(np.hypot(*(b.centre[:2] - ref[:2]))) <= AIM_RELOOK_R_M]
+                if cands:
+                    c = min(cands, key=lambda b: float(np.hypot(*(b.centre[:2] - ref[:2]))))
+                    ref = np.array([c.centre[0], c.centre[1], float(plane.z) + 0.02])
+                    look2 = np.array([ref[0], ref[1], float(plane.z) + max(c.top, 0.05) + ga.LOOK_FROM_M])
+                    self.move_to(look2.tolist(), gripper="open")
+                    out["relooked"] = [round(float(v), 3) for v in c.centre]
+                    scene = look_now()
+                    plane, raw = scene["plane"] or plane, scene["blobs"]
+                    blobs = keep(raw)
+            out["blobs"] = len(blobs)
+            if plane is None or not blobs:
+                return finish("no_object")
+            out["plane_z"] = round(float(plane.z), 4)
+            blob, how = ga.choose_blob(blobs, hint_pixel=hint, ref_xyz=ref)
+            pose = ga.aim_pose(blob, plane, _DirectEnvHandle(self).eef_quat, z_mode=z_mode, hover=hover)
+            out.update({"chosen": blob.summary(), "how": how, "yaw_deg": round(math.degrees(pose["yaw"]), 1),
+                        "target_xyz": [round(float(v), 4) for v in pose["grasp"]]})
+            if not pose["fits"]:
+                return finish("too_wide")
+            self.move_to([float(v) for v in pose["hover"]], gripper="open")
+            yaw = float(pose["yaw"])
+            while abs(yaw) > 0.03:
+                d = max(-MAX_STEP_RAD, min(MAX_STEP_RAD, yaw))
+                self.rotate([0.0, 0.0, d], gripper="open")
+                yaw -= d
+            self.move_to([float(v) for v in pose["grasp"]], gripper="open")
+            if float(eef()[2]) > float(pose["grasp"][2]) + 0.015:
+                return finish("blocked")
+            self.gripper("close")
+            empty = _grip_empty_w_for(self._current_task())
+            out["width_after_close_mm"] = round(1000.0 * width(), 1)
+            if width() < empty:
+                self.gripper("open")
+                return finish("closed_empty")
+            self.lift(0.03, gripper="close")   # keep squeezing on the way up ("hold" would let the squeeze go)
+            out["width_after_lift_mm"] = round(1000.0 * width(), 1)
+            if width() < empty:
+                self.gripper("open")
+                return finish("slipped")
+            return finish("held")
+        except AimStepCap:
+            try:
+                self._aim_cap_at = None
+                self.gripper("open")
+            except Exception:
+                pass
+            return finish("step_cap")
+        finally:
+            self._aim_cap_at = None
+            self._round_budget, self._round_used = saved_budget, saved_used
+
     # ---- Plan execution (v7: compress "one LLM round trip per primitive" into "one round trip per plan segment") -------
     #
     # v1 measurements: a median intervention took 15 tool rounds and 272 s, while the server executed all those actions
@@ -1746,11 +2038,13 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         # Handing control back to the robot's own policy for a few chunks is also an action. The judge used to have only
         # centimeter-level micro-actions, hence repeated servo_missed / closed_empty, while the policy can grasp fine from a decent
         # pose. After positioning, letting the policy do the final move often beats fine-tuning all the way by hand.
-        "policy": ("chunks",),
+        "policy": ("chunks", "hold"),
         # Soft undo: return to the takeover pose and aperture. In non-rollback runs this is the only "start over";
         # in rollback rounds 33/70 interventions ended with an undo, while in non-rollback rounds the same judgement left 10+
         # actions in the scene and kept repairing until the quota ran out. retreat lets non-rollback runs also "hand back as found".
         "retreat": ("to",),
+        # depth-camera grasp aimer (see ``aim``)
+        "aim": ("hint", "z", "hover"),
     }
     # Stop after these ops to let the model take a look. lift is the standard verification ("lift and see whether it
     # follows"); whether to stop after a close is covered by the hard closed_empty signal, avoiding an extra round trip.
@@ -1784,12 +2078,12 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 continue
             prev = plan[i - 1] if i > 0 else None
             prev_op = str(prev.get("op")) if isinstance(prev, dict) else None
-            if prev_op is None:
+            if HARD_METHOD_RULES and prev_op is None:
                 return (i, "a plan may not start with a policy step: hand control "
                            "back only after you have repaired something yourself. "
                            "Put the move_to / nudge / gripper / rotate that fixes "
                            "the fault first, then the policy step.")
-            if prev_op == "policy":
+            if HARD_METHOD_RULES and prev_op == "policy":
                 return (i, "two policy steps in a row are not allowed: each "
                            "hand-back has to be earned by a repair of your own in "
                            "between. If the previous hand-back did not help, change "
@@ -1812,15 +2106,19 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             return xyz, {"from": "xyz"}
         if "pixel" not in target:
             raise ValueError("target needs either 'xyz' or 'pixel'")
-        row, col = (int(v) for v in target["pixel"])
-        camera = str(target.get("camera") or MAIN_CAMERA)
+        row_in, col_in = (float(v) for v in target["pixel"])
+        size = int(self._render_size)
+        row = int(min(size - 1, max(0, round(row_in * size / PIXEL_FRAME))))
+        col = int(min(size - 1, max(0, round(col_in * size / PIXEL_FRAME))))
+        camera = str(target.get("camera") or MAIN_CAMERA).strip().lower()
+        camera = next((k for k in DEFAULT_CAMERA_KEYS if k in camera), camera)  # "secondary camera" -> "secondary"
         hit = self.unproject(row=row, col=col, camera=camera)
         # unproject returns the key world_xyz (not xyz). Reading the wrong key raises at the move_to step
         # a KeyError, aborting the whole plan -- and pixel targeting is exactly the form the model uses most.
         xyz = [float(v) for v in hit["world_xyz"]]
         dz = float(target.get("dz") or 0.0)
         xyz[2] += dz
-        return xyz, {"from": "pixel", "pixel": [row, col], "camera": camera, "dz": dz}
+        return xyz, {"from": "pixel", "pixel": [row, col], "point": [row_in, col_in], "frame": PIXEL_FRAME, "camera": camera, "dz": dz}
 
     def execute_plan(self, plan: Any, max_steps: int = 8) -> dict[str, Any]:
         """Execute a plan in order, stopping and returning at a checkpoint or abort condition.
@@ -1931,7 +2229,19 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                     # hand-back that raises part-way (policy server 500, render error) keeps the
                     # steps it ran charged. Its limit min(horizon, budget - committed) keeps it
                     # inside the budget, so _raw_step's refusal never fires in here.
-                    adv = self.harness_advance(num_chunks=n, frame_size=128)
+                    # right after a held aim the policy, handed an object, opened the gripper and
+                    # dropped it in 5 of 6 cases. A hand-back right after a held aim (or with "hold": true) keeps the
+                    # gripper shut while the policy moves the arm; "hold": false turns that off.
+                    hold = raw.get("hold")
+                    if hold is None:
+                        hold = any(isinstance(e, dict) and e.get("op") == "aim"
+                                   and (e.get("aim") or {}).get("result") == "held" for e in log)
+                    entry["hold"] = bool(hold)
+                    self._grip_hold = bool(hold)
+                    try:
+                        adv = self.harness_advance(num_chunks=n, frame_size=128)
+                    finally:
+                        self._grip_hold = False
                     self._round_used += n
                     self._round_policy_chunks = used_pc + n
                     entry["policy_chunks_left"] = max(0, self._PLAN_POLICY_MAX_TOTAL - self._round_policy_chunks)
@@ -1943,6 +2253,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 elif op == "rotate":
                     res = self.rotate(drot=raw["drot"], gripper=grip)
                     entry["drot"] = [round(float(v), 4) for v in raw["drot"]]
+                elif op == "aim":
+                    res = self.aim(raw)
+                    entry["aim"] = {k: res.get(k) for k in self._AIM_ENTRY_KEYS}
                 elif op == "retreat":
                     res = self.retreat(to=str(raw.get("to") or "takeover"))
                     entry["retreat"] = {k: res.get(k) for k in ("to", "fingers", "rot_before_deg", "rot_after_deg", "final_dist_m")}
@@ -2000,6 +2313,9 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 break
             if op == "gripper" and entry["state"] == "close" and width < _grip_empty_w_for(self._current_task()):
                 stop_reason, stopped_at = "closed_empty", i
+                break
+            if op == "aim" and (entry.get("aim") or {}).get("result") not in self._AIM_OK:
+                stop_reason, stopped_at = "aim_" + str((entry.get("aim") or {}).get("result")), i
                 break
             if entry.get("overshoot"):
                 stop_reason, stopped_at = "overshoot", i
@@ -2174,11 +2490,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             # Real frames are ALWAYS captured: with the privileged grasp
             # predicate gone from the model side, the imagined-vs-real image pair
             # is the model's only evidence about what the policy actually did.
-            from cf_bench.vlm_correction_rollout import render_camera_512
-
-            frames = render_camera_512(
-                env, flip_images=self._cfg.flip_images, size=self._render_size
-            )
+            frames = self._guard_frames(self._render_size, where="call_cosmos")
             assert self._policy_obs is not None
             return cosmos_call.ChunkResult(
                 observation=self._policy_obs,
@@ -2273,6 +2585,14 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             return {"policy_steps_max": None, "policy_steps_used": None, "policy_steps_left": None}
 
     def _task_max_steps(self, task: str) -> int:
+        # STEP_TOTAL (2026-10-02, user): one flat per-episode cap for every task, overriding the scale, so Spotter-H
+        # runs on the same 3000-step budget as the GPT Harness-VLA run. Unset/0 = the scaled cap, as before.
+        total = int(os.environ.get("STEP_TOTAL", "0") or 0)
+        if total > 0:
+            return total
+        return self._task_scaled_max_steps(task)
+
+    def _task_scaled_max_steps(self, task: str) -> int:
         from rpc.run_remote_robocasa_collect import TASK_MAX_STEPS
 
         return int(round(int(TASK_MAX_STEPS[task]) * self._step_budget_scale))
@@ -2524,6 +2844,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
@@ -2817,12 +3138,14 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             output_dir=self._output_dir,
             policy_family=self._policy_family,
         )
+        render_guard.reap_leaked_contexts(self._env)  # free the leaked construction-time GL context now, safely
         self._env_key = (str(task), int(seed), int(episode_index), str(obj_instance_split))
         self._primitives = RecoveryPrimitives(
             _DirectEnvHandle(self), action_dim=int(self._env.action_dim)
         )
         ff.stabilize(self._env, self._cfg)
         self._refresh_observation()
+        self._guard_observation("episode_begin")
         self._step_count = 0
 
         instruction = str(self._env.get_ep_meta().get("lang") or "")
@@ -2858,6 +3181,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             "instruction": instruction, "horizon": horizon, "max_steps": max_steps,
             "total_chunks": self._episode["total_chunks"],
             "policy_family": self._policy_family,
+            "scaled_max_steps": self._task_scaled_max_steps(task),
         }
 
     def harness_advance(
@@ -2877,7 +3201,6 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         from rpc.run_remote_robocasa_collect import (
             TASK_MAX_STEPS, _to_environment_action, _gripper_aperture,
         )
-        from cf_bench.vlm_correction_rollout import render_camera_512
         from .primitives import (
             OSC_POS_SCALE, OSC_ROT_SCALE, GRIPPER_INDEX, BASE_MODE_INDEX,
         )
@@ -3016,14 +3339,14 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 # Also sample one frame inside the chunk: human review found "the drop happens inside the chunk and is only visible in the next frame";
                 # sampling only at chunk end collapses the whole chunk into one static image.
                 if index == mid - 1 and mid > 0:
-                    shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+                    shot = self._guard_frames(frame_size, where="advance_mid")
                     frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
                     frame_steps.append(int(committed))
                 if env._check_success():
                     succeeded = True
                     break
             query_index += 1
-            shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+            shot = self._guard_frames(frame_size, where="advance_end")
             frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
             frame_steps.append(int(committed))
             # What this chunk's policy commanded, where the end effector actually went, and how wide the gripper is.
@@ -3089,6 +3412,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                 "width_mm": round(_width() * 1000.0, 1),
             },
             "done": bool(succeeded or committed >= budget or stopped != "chunks_done"),
+            # render-guard counters for this process (recovery_explore/render_guard.py); all zero on a clean episode
+            "render_guard": render_guard.counters(),
             "frames": frames,
             "frame_steps": frame_steps,
         }
@@ -3169,8 +3494,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         def _snap() -> None:
             if not record_frames:
                 return
-            from cf_bench.vlm_correction_rollout import render_camera_512
-            shot = render_camera_512(env, flip_images=self._cfg.flip_images, size=int(frame_size))
+            shot = self._guard_frames(frame_size, where="resume")
             frames.append({k: np.ascontiguousarray(shot[k]) for k in frame_cameras if k in shot})
             frame_steps.append(int(committed))
 
