@@ -102,6 +102,8 @@ INTERVENE_BUDGET=${INTERVENE_BUDGET:-8}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-
 # Max plan segments per intervention (each segment = one execute_plan + one model call).
 # 3 segments * 8 steps is enough for "open -> back to the miss point -> descend -> close -> lift and verify" plus one correction.
 PLAN_ROUNDS=${PLAN_ROUNDS:-3}
+# RoboCasa: Qwen points in 0-1000 per image, so give it each camera as its own picture (cli/qwen_call.py).
+case "$FAMILY" in cosmos|pi05) export QWEN_POINT_TILES=${QWEN_POINT_TILES:-1} ;; esac
 # Whether rewinding is allowed. With ALLOW_RESET=0 reset_window is never called and retry does not appear among the model's
 # options -- it must finish within one intervention or give up. This measures what "starting over" is really worth:
 # in episodes with reset, 6 of 11 plan segments came after a reset, and a single episode took 40 min wall clock.
@@ -795,13 +797,13 @@ Hand back once, at the end of the repair, for one or two chunks -- not as a way 
 see what the policy will do.
 
 A pixel target is unprojected server-side and then offset by dz metres, so you can
-point at what you see instead of computing world coordinates. Pick pixels only from
-the newest images you were given, and convert to the native frame of that camera first:
-every camera renders at 512 x 512 and row/col are in that frame. The per-window
-pictures are 256 x 256 copies, so double what you read off them. The checkpoint
-picture is the three native 512-wide tiles side by side -- subtract 0, 512 or 1024
-from the column for primary, secondary or wrist, and keep the row as is. A target
-that unprojects far from where you pointed is almost always this conversion missed.
+point at what you see instead of computing world coordinates. It is a point you pick in
+ONE camera image: give it as [row, col] normalized to 0-1000 within that image (0 = top /
+left edge, 1000 = bottom / right edge), the way you normally point at things, and name the
+camera. Every camera is also given to you as its own picture ("primary camera, now",
+"wrist camera, newest frame", ...): pick the point in the newest picture of the camera you
+name. The reply gives the 3-D point it found; check it is on the object and not the counter
+or the wall behind it.
 
 Execution stops early and hands back to you when: the fingers close on nothing
 (width under 12 mm), a step travels several times the distance you asked for
@@ -1302,6 +1304,21 @@ PYA
     # Memory retrieval: match symptom/applies_when using the task instruction plus current-state keywords, take 3.
     # Do not stuff in the whole index -- 23 entries of prose is a wall the model skips.
     NGRASP=$(echo "$ADV" | jget grasp_attempts)
+    # The working-hand line above exists only in RoboTwin telemetry, so on RoboCasa NGW stayed 0 and the first-intervention
+    # gate read "has not missed yet" after real empty closures. Single arm: the episode's empty closures are the working hand's.
+    if [ "$FAMILY" != robotwin ] && [ "$FAMILY" != robodojo ] && ! grep -q '^Empty closures on the working hand' "${TELF:-/dev/null}" 2>/dev/null; then
+      NGW=$(python3 -c "
+import sys,json,ast
+v=sys.argv[1]
+try:
+    x=json.loads(v)
+except Exception:
+    try: x=ast.literal_eval(v)
+    except Exception: x=v
+try: print(len(x) if isinstance(x,(list,tuple)) else int(float(x)))
+except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGW=${NGW:-0}
+      if [ "$NGW" -gt "$PREV_NGW" ] 2>/dev/null; then MISS_W=$W; PREV_NGW=$NGW; fi
+    fi
     # Situation words depend on task type: for mechanism tasks the situation is "did the fixture change, did the hand reach the control", not grasping;
     # grasp words used to be applied to everything, so old gripper/grasp entries always filled the slots and none of the 19 lessons from two rounds was ever injected
     # (103 of the 122 prompts in l24c carried the same closed-gripper entry).
@@ -1360,13 +1377,15 @@ print(1 if any(float(c.get('cmd_gripper') if c.get('cmd_gripper') is not None el
     # Rule: only one miss recorded and less than 2 windows since the first miss -> do not judge; a second miss,
     # or two windows after the miss (whatever was going to happen has happened), calls the judge.
     NGN=$(python3 -c "
-import sys,json
+import sys,json,ast
 v=sys.argv[1]
 try:
-    x=json.loads(v); print(len(x) if isinstance(x,list) else int(x))
+    x=json.loads(v)
 except Exception:
-    try: print(int(float(v)))
-    except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGN=${NGN:-0}
+    try: x=ast.literal_eval(v)
+    except Exception: x=v
+try: print(len(x) if isinstance(x,(list,tuple)) else int(float(x)))
+except Exception: print(0)" "${NGRASP:-0}" 2>/dev/null); NGN=${NGN:-0}
     if [ "$NGN" -ge 1 ] && [ -z "${FIRSTMISS_W:-}" ]; then FIRSTMISS_W=$W; fi
     if [ "$MKIND" = pnp ] && [ "$NGN" -eq 1 ] && [ -n "${FIRSTMISS_W:-}" ] && [ $((W - FIRSTMISS_W)) -lt 1 ]; then
       log "  window $W PnP gate: policy just missed once, letting it retry on its own, not judging"

@@ -94,6 +94,10 @@ except ImportError:  # pragma: no cover - direct `python env_service.py`
 # module imports cleanly off the simulation host).
 DEFAULT_CAMERA_KEYS = ("primary", "secondary", "wrist")
 MAIN_CAMERA = "primary"  # robot0_agentview_left -- the depth/unprojection camera
+# Qwen points at things as [row, col] normalized to 0-1000 of ONE image, not as raw pixels; read as 512-frame pixels every
+# target lands at about twice its position. Pixel targets from the model are in this frame and scaled to the render size
+# in _resolve_plan_target. PIXEL_FRAME=512 restores raw-pixel targets.
+PIXEL_FRAME = float(os.environ.get("PIXEL_FRAME", "1000"))
 DEFAULT_PORT = 8410
 DEFAULT_RENDER_SIZE = 512
 
@@ -1862,15 +1866,19 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             return xyz, {"from": "xyz"}
         if "pixel" not in target:
             raise ValueError("target needs either 'xyz' or 'pixel'")
-        row, col = (int(v) for v in target["pixel"])
-        camera = str(target.get("camera") or MAIN_CAMERA)
+        row_in, col_in = (float(v) for v in target["pixel"])
+        size = int(self._render_size)
+        row = int(min(size - 1, max(0, round(row_in * size / PIXEL_FRAME))))
+        col = int(min(size - 1, max(0, round(col_in * size / PIXEL_FRAME))))
+        camera = str(target.get("camera") or MAIN_CAMERA).strip().lower()
+        camera = next((k for k in DEFAULT_CAMERA_KEYS if k in camera), camera)  # "secondary camera" -> "secondary"
         hit = self.unproject(row=row, col=col, camera=camera)
         # unproject returns the key world_xyz (not xyz). Reading the wrong key raises at the move_to step
         # a KeyError, aborting the whole plan -- and pixel targeting is exactly the form the model uses most.
         xyz = [float(v) for v in hit["world_xyz"]]
         dz = float(target.get("dz") or 0.0)
         xyz[2] += dz
-        return xyz, {"from": "pixel", "pixel": [row, col], "camera": camera, "dz": dz}
+        return xyz, {"from": "pixel", "pixel": [row, col], "point": [row_in, col_in], "frame": PIXEL_FRAME, "camera": camera, "dz": dz}
 
     def execute_plan(self, plan: Any, max_steps: int = 8) -> dict[str, Any]:
         """Execute a plan in order, stopping and returning at a checkpoint or abort condition.
