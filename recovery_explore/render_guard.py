@@ -24,10 +24,8 @@ returns whatever memory ``np.empty`` recycled: RGB noise, black, black with a
 noisy band, or an older frame.  All three cameras and the 224-px policy
 observations are affected, so the policy flails and the episode fails.
 
-Reproduced and bisected with ``/workspace/frame_scan/rs/gctest4.py`` (modes
-``gcdel`` / ``glonly`` / ``cononly``); freeing the leaked context with ITSELF
-current and re-binding the live one afterwards (mode ``fixed`` in gctest3.py)
-leaves rendering intact.
+Bisecting it showed that freeing the leaked context with ITSELF current and re-binding the live one
+afterwards leaves rendering intact.
 
 What this module does (all default-on; ``RENDER_GUARD=0`` disables everything,
 ``RENDER_GUARD_VERBOSE=1`` logs per-render statistics and GL state):
