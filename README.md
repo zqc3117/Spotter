@@ -32,6 +32,12 @@ Instead of having the VLM plan every step, the embodied model leads and keeps ex
 watches in parallel and the VLM steps in only to confirm and repair an error. The VLM's job becomes much simpler,
 so the whole framework works with a **locally served, open-source Qwen and no privileged information**.
 
+## 📰 What's New
+
+- [2026/10] 🔥 RoboCasa: we release the code version that was evaluated on the 1,200-episode test set, with a render guard for black / noisy frames and a wrist-depth `aim` step for grasping. See [RoboCasa](#robocasa).
+- [2026/10] 🔥 Spotter supports **RoboTwin 2.0** with π0.5: one-command evaluation (`bash robotwin_eval.sh`), a 1-shot example bank ([fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)), and full logs on ModelScope with every episode's frames, judge prompts and replies ([150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150): policy alone, Spotter and a VLM-led agent, each with Qwen and GPT; [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)). The real-robot demo (Franka Research 3) and the [project page](https://zqc3117.github.io/Spotter/) are online. See [RoboTwin 2.0](#robotwin-20).
+- [2026/09] 🎉 The paper is on [arXiv](https://arxiv.org/abs/2609.36808), and the code is released with the RoboCasa example bank ([fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)).
+
 ## 🎬 Demos
 
 <p align="center">

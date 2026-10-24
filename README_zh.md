@@ -31,6 +31,12 @@
 它不让 VLM 规划每一步，而是让具身模型主导并持续执行；本地筛子并行关注执行进展，只有确认出错时，VLM 才介入确认并纠正。
 交给 VLM 的任务因此简单得多，整个框架**用本地部署的开源 Qwen、不借助任何特权信息**就能运行。
 
+## 📰 最新动态
+
+- [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
+- [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
+- [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
+
 ## 🎬 演示
 
 <p align="center">
