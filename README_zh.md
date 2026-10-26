@@ -13,7 +13,6 @@
 
 <p align="center">
   <a href="https://arxiv.org/abs/2609.36808"><img src="https://img.shields.io/badge/arXiv-2609.36808-b31b1b?style=for-the-badge" alt="arXiv"></a>
-  <a href="https://huggingface.co/papers/2609.36808"><img src="https://img.shields.io/badge/HF%20Papers-2609.36808-FFD21E?style=for-the-badge&logo=huggingface&logoColor=white" alt="HF Papers"></a>
   <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-Spotter-2ea44f?style=for-the-badge" alt="Project page"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://robocasa.ai"><img src="https://img.shields.io/badge/Simulator-RoboCasa-4c8bf5?style=for-the-badge" alt="RoboCasa"></a>
@@ -22,7 +21,7 @@
 
 | 📄 论文 | 🏠 项目主页 | 🤖 模型权重 | 🌐 仿真器 | 🚀 上手 |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) · [HF](https://huggingface.co/papers/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B)（RoboCasa）· [pi0.5](https://huggingface.co/motus-robotics/pi0.5_robotwin2)（RoboTwin 2.0） | [RoboCasa](https://robocasa.ai) · [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B)（RoboCasa）· [pi0.5](https://huggingface.co/motus-robotics/pi0.5_robotwin2)（RoboTwin 2.0） | [RoboCasa](https://robocasa.ai) · [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
@@ -34,7 +33,6 @@
 
 ## 📰 最新动态
 
-- [2026/10] 🤗 论文已上线 [Hugging Face Papers](https://huggingface.co/papers/2609.36808)，欢迎在论文页提问和讨论！
 - [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
 - [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
 - [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
