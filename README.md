@@ -7,6 +7,13 @@
 <p align="center">If our project helps you, please give us a star ⭐ on GitHub to support us.</p>
 
 <p align="center">
+  <a href="#-contact"><img src="https://img.shields.io/badge/WeChat-Join_Group-07c160?style=for-the-badge&logo=wechat&logoColor=white" alt="WeChat group"></a>
+  <a href="https://discord.gg/dcsEJHE4Pk"><img src="https://img.shields.io/badge/Discord-Join_Server-5865f2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <br>
+  💬 QR codes for our WeChat group and Discord are in <a href="#-contact">Contact</a>.
+</p>
+
+<p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>
 </p>

@@ -7,6 +7,13 @@
 <p align="center">如果我们的项目对你有帮助，欢迎在 GitHub 上点一个 star ⭐ 支持我们</p>
 
 <p align="center">
+  <a href="#-联系方式"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1%E7%BE%A4-%E6%89%AB%E7%A0%81%E5%8A%A0%E5%85%A5-07c160?style=for-the-badge&logo=wechat&logoColor=white" alt="微信群"></a>
+  <a href="https://discord.gg/dcsEJHE4Pk"><img src="https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E7%A4%BE%E5%8C%BA-5865f2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <br>
+  💬 微信群和 Discord 的二维码见<a href="#-联系方式">联系方式</a>。
+</p>
+
+<p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>
 </p>
