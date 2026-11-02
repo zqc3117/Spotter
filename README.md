@@ -7,23 +7,13 @@
 <p align="center">If our project helps you, please give us a star ⭐ on GitHub to support us.</p>
 
 <p align="center">
-  <a href="#-contact"><img src="https://img.shields.io/badge/WeChat-Join_Group-07c160?style=for-the-badge&logo=wechat&logoColor=white" alt="WeChat group"></a>
-  <a href="https://discord.gg/dcsEJHE4Pk"><img src="https://img.shields.io/badge/Discord-Join_Server-5865f2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://arxiv.org/abs/2609.36808"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"></a>
+  <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-2ea44f?logo=googlechrome&logoColor=white" alt="Project page"></a>
+  <a href="#-contact"><img src="https://img.shields.io/badge/WeChat-07c160?logo=wechat&logoColor=white" alt="WeChat group"></a>
+  <a href="https://discord.gg/dcsEJHE4Pk"><img src="https://img.shields.io/badge/Discord-5865f2?logo=discord&logoColor=white" alt="Discord"></a>
   <br>
-  💬 QR codes for our WeChat group and Discord are in <a href="#-contact">Contact</a>.
-</p>
-
-<p align="center">
-  <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
-  <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>
-</p>
-
-<p align="center">
-  <a href="https://arxiv.org/abs/2609.36808"><img src="https://img.shields.io/badge/arXiv-2609.36808-b31b1b?style=for-the-badge" alt="arXiv"></a>
-  <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-Spotter-2ea44f?style=for-the-badge" alt="Project page"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://robocasa.ai"><img src="https://img.shields.io/badge/Simulator-RoboCasa-4c8bf5?style=for-the-badge" alt="RoboCasa"></a>
-  <a href="https://github.com/RoboTwin-Platform/RoboTwin"><img src="https://img.shields.io/badge/Simulator-RoboTwin_2.0-7a5af8?style=for-the-badge" alt="RoboTwin 2.0"></a>
+  <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-007ec6" alt="English"></a>
+  <a href="./README_zh.md"><img src="https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-d14836" alt="简体中文"></a>
 </p>
 
 | 📄 Paper | 🏠 Project page | 🤖 Model checkpoints | 🌐 Simulator | 🚀 Get started |
