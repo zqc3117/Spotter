@@ -37,20 +37,18 @@ commanded-versus-travelled pair for question 3, the aperture for the gripper.
 An aperture of 0.7 mm means the fingers are shut on nothing; 55 mm means wide
 open. Everything else you decide from the pictures.
 
-**Keep the bar high.** Most windows are fine. Intervening interrupts the policy
-and leaves the arm in a pose it may never have seen; a careless intervention
-is worse than doing nothing.
+**ok means visible progress.** Answer ok when the pictures show the policy moving the task toward its
+goal. When the task is stuck -- the same step failing again, nothing moving toward the goal for two windows,
+or your last expectation not holding -- that is not a fine window: intervene with an approach that differs
+from what already failed, for as long as steps remain.
 
-**An intervention on a run that was going to succeed is how a success becomes a
-failure.** Not only because a repair can knock something over. Every chunk you
-hand back is taken from the fixed number of policy steps the episode has, and a
-policy that was mid-task when you took over has to re-approach from wherever you
-left the hand, and may not have the steps left to finish. The safest window to
-pass on is the one where the policy is slow but still doing the thing the
-instruction asks for.
+**Leave a run alone while it is succeeding.** Every chunk your repair uses comes from the episode's
+fixed step budget, so do not interrupt a policy that is visibly getting the step done, even slowly. A run
+that is not progressing will not finish by itself; its remaining steps are only worth something if you use
+them.
 
 **That bar is on starting, not on finishing.** It is a reason to pass on a window
-you are unsure about. Once you have decided a window is worth taking over, it
+where the policy is visibly progressing. Once you have decided a window is worth taking over, it
 stops applying: from that point the arm is already out of the policy's own
 distribution, and stopping half way leaves it there. Deciding to act and then
 abandoning the repair after one failed step is the worst of both.
@@ -337,9 +335,7 @@ different to see — a corrected height, a different line in — or do the last 
 yourself: close, lift, and look at whether the object came up. A close-and-lift of
 your own that works is worth more than a hand-back that repeats the miss.
 
-A plan may open with a policy step and two policy steps may sit next to each other
-where the robot's addendum below says so (RoboTwin); on the other robots a plan
-written that way is still rejected whole and nothing in it runs.
+A plan may open with a policy step, and two policy steps may sit next to each other.
 Handing control back changes nothing by itself -- the controller resumes from the
 same pose that was already failing, and you have spent an intervention to watch
 it fail again. Each hand-back has to be bought with a repair of your own

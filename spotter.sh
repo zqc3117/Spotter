@@ -116,12 +116,12 @@ cmd_run() {
   if [ -z "$simgpus" ]; then simgpus=$( (nvidia-smi -L 2>/dev/null || true) | wc -l | tr -d ' '); [ "${simgpus:-0}" -gt 0 ] || simgpus=1; fi
 
   # paper settings (Table 3, "full context"); anything already exported in the environment wins
-  local window=2 tel=40 keep=20 compact=110000 maxint=8
+  local window=2 tel=40 keep=20 compact=110000 maxint=30
   [ "$fam" = pi05 ] && { window=1; tel=10; }
   # RoboTwin 2.0 (dual-arm tabletop): the settings of the RoboTwin runs -- 2 chunks per window, the last 10
   # chunks of action history in the telemetry, 5 interventions per episode, a shorter Qwen history (10 turns,
   # compaction at 40k tokens: the judge prompt carries three cameras per chunk), its own lesson bank.
-  [ "$fam" = robotwin ] && { window=2; tel=10; keep=10; compact=40000; maxint=5; }
+  [ "$fam" = robotwin ] && { window=2; tel=10; keep=10; compact=40000; maxint=30; }
   local -a envs=(
     ON_POD=1 RUN="$run" NGPU="$simgpus" FAMILY_OVERRIDE="$fam"
     SIM_HOST=127.0.0.1 SIM_MANAGED=0 POLICY_URL="${POLICY_URL:-http://127.0.0.1:$port}"

@@ -1967,7 +1967,7 @@ class RobotwinInterventionMixin:
             raise ValueError(f"plan has {len(plan)} steps; at most {int(max_steps)} are allowed")
 
         plan, fix_notes = self._plan_fix(plan)
-        bad = self._plan_gate(plan)
+        bad = self._plan_gate(plan) if os.environ.get("SPOTTER_STRATEGY_GATES", "0") == "1" else None
         if bad is not None:
             index, why = bad
             op = str(plan[index].get("op")) if isinstance(plan[index], dict) else "?"

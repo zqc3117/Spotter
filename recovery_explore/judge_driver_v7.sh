@@ -98,7 +98,7 @@ LEARN=${LEARN:-0}
 # Object instance split: A = instances seen in training, B = held out for generalization. harness has always defaulted to B,
 # while both policies' published baselines were measured on A -- without aligning, our numbers cannot be compared to theirs.
 SPLIT=${SPLIT:-B}
-INTERVENE_BUDGET=${INTERVENE_BUDGET:-8}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
+INTERVENE_BUDGET=${INTERVENE_BUDGET:-8}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-30}
 # Max plan segments per intervention (each segment = one execute_plan + one model call).
 # 3 segments * 8 steps is enough for "open -> back to the miss point -> descend -> close -> lift and verify" plus one correction.
 # RoboCasa (cosmos / pi05): 5 segments (its segments often stop at a checkpoint after 1-2 steps), the late-first-intervention
@@ -665,12 +665,12 @@ build_iv_block(){
   if [ "${VERIFY_PENDING:-0}" = 1 ]; then
     IV_BLOCK="$head
 $exp
-THIS IS A VERIFICATION WINDOW. You intervened in the window just before this one, so
-you may not intervene again here. Open your diagnosis by answering, from the numbers
+THIS IS THE WINDOW RIGHT AFTER YOUR INTERVENTION. Put your answer to the question below in
+\"expect_held\" (yes, no or unclear). Open your diagnosis by answering, from the numbers
 and the image: did that expectation hold -- yes, no, or cannot tell yet -- and on what
-evidence. Then answer ok. If it did not hold, say plainly what the repair failed to
-achieve; you get to act again in the window after this one, and that answer is what
-you will have to build on."
+evidence. If it held or you cannot tell yet, answer ok. If it clearly did not hold, say
+plainly what the repair failed to achieve and intervene again now with a different kind of
+repair (another point, the other arm, a push, a place), not the same one with an offset."
   else
     IV_BLOCK="$head
 $exp
@@ -683,10 +683,11 @@ same thing twice. If it did not, a further intervention has to change category, 
   if [ "${VERIFY_PENDING:-0}" = 1 ]; then
     IV_BLOCK="$head
 $exp
-THIS IS A VERIFICATION WINDOW. You intervened in the window just before this one, so
-you may not intervene again here. Open your diagnosis by answering, from the numbers
+THIS IS THE WINDOW RIGHT AFTER YOUR INTERVENTION. Put your answer to the question below in
+\"expect_held\" (yes, no or unclear). Open your diagnosis by answering, from the numbers
 and the image: did that expectation hold -- yes, no, or cannot tell yet -- and on what
-evidence. Then answer ok. Judge it by the object, not by the exact width you wrote: a
+evidence. If it held or you cannot tell yet, answer ok; if it clearly did not hold, intervene
+again now with a different kind of repair. Judge it by the object, not by the exact width you wrote: a
 close the policy made that stopped in the tens of mm, with no new 'closed all the way'
 entry, is usually the object in the hand whatever number you predicted, and a hand
 carrying it means yes. While the policy is still re-approaching or closing, cannot
@@ -736,13 +737,20 @@ Answer with ONE json object and nothing else (no prose around it, no code fence)
 {"verdict": "ok" | "intervene" | "giveup",
  "diagnosis": "one or two sentences on what you see",
  "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the kettle leaves the burner. Omit for ok and giveup.",
+ "expect_held": "yes | no | unclear: right after an intervention, did the expectation you stated hold? Omit otherwise.",
  "plan": []}
 
-- verdict "ok": the policy is coping. plan MUST be empty. Most windows are ok.
-- verdict "intervene": something is wrong that you can fix. plan is 1 to 8 steps,
-  executed IN ORDER by the simulator without asking you again, so write the whole
-  repair, not just its first move.
-- verdict "giveup": beyond rescue. plan MUST be empty. This is final for the episode.
+- verdict "ok": the policy is visibly making progress toward the goal in these pictures -- the object it
+  works on moved toward where the task wants it, a step got done, or a grasp or placement is under way and
+  is not repeating an earlier failure. plan MUST be empty.
+- verdict "intervene": anything else while steps remain -- the task is stuck, the same step failed again,
+  your last expectation did not hold, or nothing moved toward the goal in the last two windows. Each time,
+  try an approach that differs from what already failed. "No reliable short fix", a repair that needs
+  several steps, or few steps left are NOT reasons to answer ok: ok hands the steps back to a policy that
+  is not progressing. plan is 1 to 8 steps, executed IN ORDER by the simulator without asking you again,
+  so write the whole repair, not just its first move.
+- verdict "giveup": only when no steps are left to act with, or the objects the task needs have left every
+  camera and the reach of both arms. plan MUST be empty. This is final for the episode.
 
 Each step is one of:
   {"op": "gripper", "state": "open" | "close"}
@@ -752,17 +760,13 @@ Each step is one of:
   {"op": "lift",   "dz": 0.08, "gripper": "hold"}
   {"op": "rotate", "drot": [rx, ry, rz], "gripper": "hold"}
   {"op": "policy", "chunks": 2}            (add "hold": true to keep the fingers shut while the policy moves)
-  {"op": "retreat"}
+  {"op": "retreat"}                       (a hand holding something keeps it; add "release": true to let go)
   {"op": "retreat", "to": "pre_grasp"}
   {"op": "aim", "z": "mid"}            (optional "hint": [row, col] of the object in the newest WRIST picture, 0-1000)
 
-Two things the simulator still does on every plan (a plan that breaks one is rejected
-whole, nothing runs, and the error names the step): any manual close must be followed by
-a lift in the same plan, so a grasp is always verified by seeing whether the object comes
-up; and on microwave, coffee-machine and stove tasks a move_to farther than 6 cm from the
-current pose is refused, because the controller runs away there. Nothing else is refused:
-you may close the fingers yourself in your very first repair, and a step that missed,
-overshot or was clipped does not lock you out -- re-plan from where the hand ended up.
+Nothing in a plan is refused for the way it repairs: you may close the fingers yourself in your very
+first repair, open with a policy step, and a step that missed, overshot or was clipped does not lock you
+out -- re-plan from where the hand ended up.
 
 retreat with "to": "pre_grasp" goes somewhere better than the takeover pose: the
 point on the approach the policy itself took, just before its last empty closure,
@@ -878,13 +882,20 @@ Answer with ONE json object and nothing else (no prose around it, no code fence)
 {"verdict": "ok" | "intervene" | "giveup",
  "diagnosis": "one or two sentences on what you see",
  "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the kettle leaves the burner. Omit for ok and giveup.",
+ "expect_held": "yes | no | unclear: right after an intervention, did the expectation you stated hold? Omit otherwise.",
  "plan": []}
 
-- verdict "ok": the policy is coping. plan MUST be empty. Most windows are ok.
-- verdict "intervene": something is wrong that you can fix. plan is 1 to 8 steps,
-  executed IN ORDER by the simulator without asking you again, so write the whole
-  repair, not just its first move.
-- verdict "giveup": beyond rescue. plan MUST be empty. This is final for the episode.
+- verdict "ok": the policy is visibly making progress toward the goal in these pictures -- the object it
+  works on moved toward where the task wants it, a step got done, or a grasp or placement is under way and
+  is not repeating an earlier failure. plan MUST be empty.
+- verdict "intervene": anything else while steps remain -- the task is stuck, the same step failed again,
+  your last expectation did not hold, or nothing moved toward the goal in the last two windows. Each time,
+  try an approach that differs from what already failed. "No reliable short fix", a repair that needs
+  several steps, or few steps left are NOT reasons to answer ok: ok hands the steps back to a policy that
+  is not progressing. plan is 1 to 8 steps, executed IN ORDER by the simulator without asking you again,
+  so write the whole repair, not just its first move.
+- verdict "giveup": only when no steps are left to act with, or the objects the task needs have left every
+  camera and the reach of both arms. plan MUST be empty. This is final for the episode.
 
 Each step is one of:
   {"op": "gripper", "state": "open" | "close"}
@@ -894,16 +905,8 @@ Each step is one of:
   {"op": "lift",   "dz": 0.08, "gripper": "hold"}
   {"op": "rotate", "drot": [rx, ry, rz], "gripper": "hold"}
   {"op": "policy", "chunks": 2}
-  {"op": "retreat"}
+  {"op": "retreat"}                       (a hand holding something keeps it; add "release": true to let go)
   {"op": "retreat", "to": "pre_grasp"}
-
-Three rules the simulator enforces on every plan (a plan that breaks one is rejected
-whole, nothing runs, and the error names the step): on a pick-and-place task a manual
-close is refused until a policy hand-back in this intervention has failed, and any
-manual close must be followed by a lift in the same plan; on microwave, coffee-machine
-and stove tasks a move_to farther than 6 cm from the current pose is refused; and once
-a step in this intervention has missed, overshot or been clipped, only gripper and
-policy steps are accepted for the rest of it.
 
 retreat with "to": "pre_grasp" goes somewhere better than the takeover pose: the
 point on the approach the policy itself took, just before its last empty closure,
@@ -1235,10 +1238,11 @@ with an empty plan -- that hands the policy back the scene it had.'
 else
   RESULT_OPTS='"fixed" | "giveup" | "continue"'
   RESTAGE_TAIL='it is the only kind of retry that exists -- nothing rewinds the scene, and whatever
-you have already moved stays moved. When a repair has failed once, the honest ending
-is retreat, then fixed with an empty plan: the policy gets its own pose back and all
-the steps it has left. Two attempts from one takeover is the limit; a third small
-correction from wherever the hand now is, is how interventions run an episode out.'
+you have already moved stays moved. When a repair fails, read what the step reported and
+the fresh image, then try a materially different approach -- another point, angle or
+height, the other arm, a push -- rather than repeating the same op. Keep going while steps
+remain; a stuck step is not done. Hand back only when the step you took over is visibly
+done, or when the policy is clearly better placed to do it.'
   BLOWUP_ACTION='Send one plan containing only {"op": "retreat"}. If that step also travels several
 times what it asked for, open the fingers and end the intervention as fixed with a
 note saying what happened.'
@@ -1714,8 +1718,8 @@ $TEL
 
 $MEM
 
-Read the numbers above before you look at the image. Keep the bar high: most
-windows should be ok.
+Read the numbers above before you look at the image. ok means the policy is visibly
+making progress; a stuck step or a failed expectation needs an intervention.
 $IV_BLOCK
 
 $PLAN_SPEC
@@ -1804,7 +1808,8 @@ print(json.dumps(l))")
     fi
     # Per human review: once the judge says giveup, no more interventions this episode; the policy runs to the end.
     # In round three one episode judged intervene ten times but acted once; the other nine were blocked by the cap and idled, wasting money.
-    if [ "$V" = "intervene" ] && [ "${VERIFY_PENDING:-0}" = 1 ]; then
+    if [ "$V" = "intervene" ] && [ "${VERIFY_PENDING:-0}" = 1 ] \
+       && { [ "${VERIFY_ACT:-1}" != 1 ] || [ "$(jfield "$JJ" expect_held | tr 'A-Z' 'a-z')" != no ]; }; then
       log "  window $W verification window: intervened in the previous window, observe only (judge wanted to intervene, blocked)"
       NVERIFY=$((NVERIFY+1)); V=ok
     fi
@@ -2066,10 +2071,10 @@ print(1 if e.get('op')=='retreat' and e.get('servo_ok') is not False and not e.g
 NOT back: it is wherever your last contact left it, so look at it again in the fresh
 image before planning -- re-derive any target from what you see now, never from the
 numbers you used before. If the policy had been handed back in this intervention,
-you have just undone its re-approach as well; do not make that a habit. If you have a materially different approach -- a different
-line in, a lower grasp, letting the policy make the close -- send it as continue.
-Otherwise answer fixed with an empty plan: that hands the policy back its pose,
-and an intervention ended this way is not counted against your allowance."
+you have just undone its re-approach as well. Send a materially different approach -- a different
+line in, a lower grasp, the other arm, letting the policy make the close -- as continue. Answer fixed
+with an empty plan (handing the policy back its pose) only when the step is visibly done or the policy
+is clearly better placed to do it; a stuck step is not done."
         fi
         R=$((R+1))
         # Hand the execution result back to the model: continue with the next segment or finish. It Reads the image itself.
@@ -2131,10 +2136,10 @@ for e in d.get('executed') or []:
     bits=[f\"step {e.get('step')} {e.get('op')}\"]
     for k in ('target','dxyz','dz','drot','state'):
         if e.get(k) is not None: bits.append(f'{k}={e[k]}')
-    bits.append(f\"eef {e.get('eef_after')}\")
-    bits.append(f\"moved {e.get('moved_cm')} cm\")
-    bits.append(f\"width {e.get('width_mm')} mm\")
-    bits.append(f\"force {e.get('wrist_contact_force')} N\")
+    if e.get('eef_after') is not None: bits.append(f\"eef {e.get('eef_after')}\")
+    if e.get('moved_cm') is not None: bits.append(f\"moved {e.get('moved_cm')} cm\")
+    if e.get('width_mm') is not None: bits.append(f\"width {e.get('width_mm')} mm\")
+    if e.get('wrist_contact_force') is not None: bits.append(f\"force {e.get('wrist_contact_force')} N\")
     if e.get('servo_ok') is False: bits.append('SERVO DID NOT REACH TARGET')
     if e.get('clipped_to_m') is not None: bits.append(f\"CLIPPED to {e['clipped_to_m']} m (asked {e.get('requested_dist_m')} m)\")
     if e.get('overshoot'): bits.append(f\"OVERSHOOT: asked {e.get('requested_cm')} cm, travelled {e.get('moved_cm')} cm\")
@@ -2210,8 +2215,14 @@ PEOF
         CKIMG=$(echo "$EX" | jget image)
         claude_turn "$CD/p_exec_w${W}_a${ATT}_r$((R-1)).txt" "$EJ" $ACT_DEADLINE "${CKIMG:-}" "Read"
         RJ=$(extract_json "$EJ")
-        RES=$(jfield "$RJ" result); RES=${RES:-fixed}
+        RES=$(jfield "$RJ" result)
         PLAN=$(jfield "$RJ" plan)
+        if [ -z "$RES" ]; then
+          # A reply without "result" used to count as fixed. A plan without a result is run as continue; anything else
+          # is recorded as unparsed so it is never mistaken for a successful repair.
+          if [ -n "$PLAN" ] && [ "$PLAN" != "[]" ]; then RES=continue; log "  window $W a$ATT reply had a plan but no result, running it as continue"
+          else RES=unparsed; log "  window $W a$ATT reply had no parsable result, recorded as unparsed (not fixed)"; fi
+        fi
         # Push back once on a giveup in the first segment. Measured: 8 of 11 interventions ended in giveup, most with the hand still next to
         # the object and the object still in place -- not a lost cause, just no further attempt.
         if [ "$RES" = giveup ] && [ "$R" -le 1 ] && [ "$GIVEUP_PUSHED" != 1 ]; then
@@ -2301,7 +2312,8 @@ PEOF
             fi
             continue ;;
           giveup) GAVEUP=1; break ;;
-          *) RES=fixed; break ;;
+          fixed) break ;;
+          *) [ "$RES" = unparsed ] || log "  window $W a$ATT unknown result '$RES', recorded as unparsed (not fixed)"; RES=unparsed; break ;;
         esac
       done
       CB=$($H close-budget --control-token "$WTOK" 2>&1 | tail -1); USED=$(echo "$CB" | jget actions_used); RSETS=$(echo "$CB" | jget resets)
@@ -2326,16 +2338,18 @@ cd,w=sys.argv[1],sys.argv[2]
 ops=[]
 for f in sorted(glob.glob(f"{cd}/plan_w{w}_a*_r*.json")):
     try:
-        pl=json.load(open(f)); st=pl.get("plan") or pl.get("steps") or []
+        pl=json.load(open(f)); st=pl if isinstance(pl,list) else (pl.get("plan") or pl.get("steps") or [])
         ops+= [s.get("op","?") if isinstance(s,dict) else str(s) for s in st]
     except Exception: pass
-stops=[]
+stops=[]; ops_out=[]
 for f in sorted(glob.glob(f"{cd}/exec_w{w}_a*_r*.json")):
     try:
         j=json.load(open(f)); r=j.get("stop_reason") or j.get("status")
         if r: stops.append(str(r))
+        outs=[f"{e.get('op')}->{e.get('outcome') or ('error: '+str(e.get('error'))[:60] if e.get('error') else ('did not reach target' if e.get('servo_ok') is False or e.get('ok') is False else 'done'))}" for e in (j.get("executed") or [])]
+        if outs: ops_out.append(", ".join(outs))
     except Exception: pass
-print(("steps: "+" + ".join(ops[:8]) if ops else "steps: (none recorded)") + ("; how they ended: "+", ".join(stops[:6]) if stops else ""))
+print(("steps: "+" + ".join(ops[:8]) if ops else "steps: (none recorded)") + ("; outcomes: "+" | ".join(ops_out[:8]) if ops_out else "") + ("; how they ended: "+", ".join(stops[:6]) if stops else ""))
 PYM
 )
       VERIFY_PENDING=1

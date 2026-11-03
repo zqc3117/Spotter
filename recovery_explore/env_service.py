@@ -233,6 +233,14 @@ class EpisodeStepBudgetExhausted(RuntimeError):
     """
 
 
+def _strategy_gates_on() -> bool:
+    """Server-side strategy gates (policy-step gate, manual-close rules, fixture move_to limit, lock after a missed
+    step) reject a plan for HOW it repairs. User rule: the judge keeps that choice, so they are off unless
+    SPOTTER_STRATEGY_GATES=1. Safety stops (empty close, contact, blow-up, unreachable) are unaffected."""
+    import os as _sg_os
+    return _sg_os.environ.get("SPOTTER_STRATEGY_GATES", "0") == "1"
+
+
 def _repair_gate_check(task: str, plan, policy_chunks_so_far: int, faults_this_window: int,
                        eef_pos=None, resolve_xyz=None):
     """Return (step_index, message) to reject the whole plan; None to accept it.
@@ -1213,7 +1221,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         except Exception:
             return None
 
-    def retreat(self, to: str = "takeover") -> dict[str, Any]:
+    def retreat(self, to: str = "takeover", release: bool = False) -> dict[str, Any]:
         """Return the hand to its pose at the takeover of this intervention and restore the gripper to its takeover aperture, without touching the scene.
 
         This is the "hand back as found" of non-rollback runs: after a failed repair, stop repairing from the runaway spot and instead retreat
@@ -1236,9 +1244,16 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
         self._spend_action("retreat")
         drv = self._primitive_driver()
         was_open = float(pose["aperture_m"]) >= GRIP_EMPTY_W
-        grip = -1.0 if was_open else 1.0
-        # Release first: undoing means dropping anything picked up during the repair (if the hand was open at takeover).
-        if was_open:
+        # A hand that closed on something during the repair (aperture above empty, below the takeover opening) keeps
+        # it unless the plan asked for "release": true -- dropping a grasped object was rarely what the judge meant.
+        try:
+            cur_ap = float(_gripper_aperture(self._policy_obs))
+        except Exception:
+            cur_ap = None
+        keep = bool(was_open and not release and cur_ap is not None
+                    and GRIP_EMPTY_W <= cur_ap < float(pose["aperture_m"]) - 0.01)
+        grip = -1.0 if (was_open and not keep) else 1.0
+        if was_open and not keep:
             drv.open_gripper(steps=GRIPPER_STEPS)
         cur = np.asarray(self._obs_value("robot0_eef_pos"), dtype=np.float64)
         target = np.asarray(pose["eef_pos"], dtype=np.float64)
@@ -1255,7 +1270,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             "requested_dist_m": round(req, 4),
             "rot_before_deg": rot_before,
             "rot_after_deg": rot_after,
-            "fingers": "open" if was_open else "close",
+            "fingers": "kept_holding" if keep else ("open" if was_open else "close"),
             "to": to,
             "eef": np.asarray(self._obs_value("robot0_eef_pos")).tolist(),
             "gripper_qpos": mv.get("gripper_qpos"),
@@ -2155,8 +2170,8 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
             # with nothing executed. Abandoning halfway is harder to recover from than rejecting outright -- the model would get a half-changed
             # world and first have to work out which steps took effect.
             if i == 0:
-                bad = self._policy_step_gate(plan)
-                if bad is None:
+                bad = self._policy_step_gate(plan) if _strategy_gates_on() else None
+                if bad is None and _strategy_gates_on():
                     try:
                         ep = self._episode or {}
                         bad = _repair_gate_check(
@@ -2257,7 +2272,7 @@ class RecoveryEnvService(MainThreadServeMixin, RpcFacade):
                     res = self.aim(raw)
                     entry["aim"] = {k: res.get(k) for k in self._AIM_ENTRY_KEYS}
                 elif op == "retreat":
-                    res = self.retreat(to=str(raw.get("to") or "takeover"))
+                    res = self.retreat(to=str(raw.get("to") or "takeover"), release=bool(raw.get("release")))
                     entry["retreat"] = {k: res.get(k) for k in ("to", "fingers", "rot_before_deg", "rot_after_deg", "final_dist_m")}
                 else:  # gripper
                     state = str(raw.get("state") or raw.get("action") or "close")
