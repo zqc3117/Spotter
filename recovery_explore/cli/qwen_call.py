@@ -248,7 +248,8 @@ def main() -> None:
             if attempt < a.retries:
                 time.sleep(3); continue
             break
-    if rec["result"] and not rec["result"].lstrip().startswith('{"type": "error"'):
+    # QWEN_JSON_FIX=1 (the driver sets it for RoboDojo): one follow-up turn when the reply is not a JSON object.
+    if os.environ.get("QWEN_JSON_FIX", "0") == "1" and rec["result"] and not rec["result"].lstrip().startswith('{"type": "error"'):
         obj = _json_object(rec["result"])
         if obj is None:
             try:   # one follow-up turn, thinking off: only the JSON object

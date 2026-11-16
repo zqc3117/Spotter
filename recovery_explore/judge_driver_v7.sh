@@ -98,7 +98,14 @@ LEARN=${LEARN:-0}
 # Object instance split: A = instances seen in training, B = held out for generalization. harness has always defaulted to B,
 # while both policies' published baselines were measured on A -- without aligning, our numbers cannot be compared to theirs.
 SPLIT=${SPLIT:-B}
-INTERVENE_BUDGET=${INTERVENE_BUDGET:-16}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
+_IB=8; [ "$FAMILY" = robodojo ] && _IB=16
+INTERVENE_BUDGET=${INTERVENE_BUDGET:-$_IB}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
+# Window-prompt closing line: RoboDojo uses the staged-repair wording, the other families the original one.
+BAR_LINE="Keep the bar high: most
+windows should be ok."; [ "$FAMILY" = robodojo ] && BAR_LINE="Intervene only on clear failure
+evidence, following the stages in STAGED REPAIR."
+# RoboDojo (rdv5+): more retries on empty judge replies (its step allowance per intervention is 16, set above).
+if [ "$FAMILY" = robodojo ]; then EMPTY_TRIES=${EMPTY_TRIES:-8}; export QWEN_JSON_FIX=${QWEN_JSON_FIX:-1}; else EMPTY_TRIES=${EMPTY_TRIES:-3}; fi
 # Max plan segments per intervention (each segment = one execute_plan + one model call).
 # 3 segments * 8 steps is enough for "open -> back to the miss point -> descend -> close -> lift and verify" plus one correction.
 # RoboCasa (cosmos / pi05): 5 segments (its segments often stop at a checkpoint after 1-2 steps), the late-first-intervention
@@ -435,7 +442,7 @@ alt_rebrief(){ local pf="$1" out="$1.alt"
     build_recap 2>/dev/null
     echo; echo "------------------------------------------------------------"; echo
     cat "$pf"; } > "$out"; echo "$out"; }
-claude_turn_core(){ # $1=prompt file $2=output json $3=deadline $4=optional image $5=allowed tools (default: Read only)
+claude_turn(){ # $1=prompt file $2=output json $3=deadline $4=optional image $5=allowed tools (default: Read only)
   # Compaction inside an intervention too: previous turn over threshold while intervening -> drop the session and prefix this turn's prompt with the brief + this intervention's memo.
   if [ "${IN_IV:-0}" = 1 ] && [ "${COMPACT_PENDING:-0}" = 1 ] && [ -s "$CD/brief_cache.txt" ]; then
     SID=""; COMPACT_PENDING=0; NCOMPACT=$((NCOMPACT+1)); COMPACTED_W=1
@@ -616,61 +623,6 @@ PYCAP
     COMPACT_PENDING=1
   fi
   return $rc; }
-
-# fx (2026-11-12, user): split roles. When ACT_ENGINE/ACT_MODEL are set, every turn INSIDE an intervention (IN_IV=1:
-# the repair plan, the step-by-step follow-ups, push-backs) goes to ACT_ENGINE/ACT_MODEL; the window verdicts stay with
-# ENGINE/MODEL. Each role keeps its own session id and compaction flag; ACT_SID is reset at every intervention start.
-claude_turn(){
-  if [ -z "${ACT_ENGINE:-}" ] || [ "${IN_IV:-0}" != 1 ]; then claude_turn_core "$@"; return $?; fi
-  local _e=$ENGINE _m=$MODEL _r=$REASONING _s=$SID _c=${COMPACT_PENDING:-0} _rc _t0=$(date +%s)
-  ENGINE=$ACT_ENGINE; MODEL=$ACT_MODEL; REASONING=${ACT_REASONING:-$REASONING}; SID=${ACT_SID:-}; COMPACT_PENDING=${ACT_COMPACT_PENDING:-0}
-  claude_turn_core "$@"; _rc=$?
-  ACT_SID=$SID; ACT_COMPACT_PENDING=${COMPACT_PENDING:-0}
-  ENGINE=$_e; MODEL=$_m; REASONING=$_r; SID=$_s; COMPACT_PENDING=$_c
-  echo "{\"w\":${W:-0},\"att\":${ATT:-0},\"engine\":\"$ACT_ENGINE\",\"model\":\"$ACT_MODEL\",\"prompt\":\"$1\",\"out\":\"$2\",\"rc\":$_rc,\"sec\":$(( $(date +%s) - _t0 ))}" >> "$CD/act_engine_calls.jsonl"
-  return $_rc; }
-# The first turn of an intervention for ACT_MODEL: the judge's brief, the episode so far, the judge's reading of this
-# window and the window prompt itself (pictures by path); ACT_MODEL writes the plan that is executed.
-act_handover(){
-  python3 - "$CD/brief_cache.txt" "$CD/p_w$W.txt" << 'PYB' 2>/dev/null
-import sys
-b = open(sys.argv[1]).read() if sys.argv[1] else ""
-print(b)
-PYB
-  echo "------------------------------------------------------------"
-  echo "YOUR ROLE IN THIS EPISODE: you are the REPAIR OPERATOR. A separate judge model watches the episode window by"
-  echo "window and decides WHEN to intervene; you decide HOW. The brief above was written for the judge; it describes"
-  echo "the robot, the cameras, the ops and the rules, and all of it applies to you. Wherever it says \"you\" about"
-  echo "deciding whether to intervene, that is the judge; everything about repairing is you."
-  echo "The judge has just decided to intervene at window $W. That decision is made: do not re-judge it."
-  echo "Task instruction: $INSTR"
-  [ -s "$CD/task_plan.json" ] && { echo "Task parse:"; cat "$CD/task_plan.json"; echo; }
-  echo; echo "WHAT HAPPENED IN THIS EPISODE SO FAR:"; build_recap 2>/dev/null
-  python3 - "$CD/judge_w$W.json" << 'PYJ' 2>/dev/null
-import json, re, sys
-try:
-    r = json.load(open(sys.argv[1])).get("result") or ""
-    o = json.loads(re.search(r"\{.*\}", r, re.S).group(0))
-except Exception:
-    o = {}
-if o.get("diagnosis"): print("\nTHE JUDGE'S READING OF THIS WINDOW: " + str(o["diagnosis"])[:1500])
-if o.get("expect"): print("What the judge expects to see once the repair is done: " + str(o["expect"])[:600])
-PYJ
-  echo; echo "------------------------------------------------------------"
-  echo "THE WINDOW THE JUDGE WAS SHOWN (read the pictures yourself):"; echo
-  python3 - "$CD/brief_cache.txt" "$CD/p_w$W.txt" << 'PYW' 2>/dev/null
-import sys
-b = open(sys.argv[1]).read(); p = open(sys.argv[2]).read()
-print(p[len(b):] if p.startswith(b) else p)
-PYW
-  echo; echo "Overview picture of this window (numbered marks on the newest head-camera frame where available): $JMONT"
-  [ -n "$RESTAGE" ] && { echo; echo "$RESTAGE"; }
-  echo; echo "------------------------------------------------------------"
-  echo "Write the repair. Answer with ONE json object, the same schema the judge uses:"
-  echo '{"verdict": "intervene", "diagnosis": "your own reading of what went wrong", "expect": "what the cameras should show once your repair is done", "plan": [ ...ops... ]}'
-  echo "plan must hold at least one step (only its first step runs; you then see the outcome and send the next)."
-  echo 'If you judge that the policy should simply carry on, send "plan": [{"op": "policy", "chunks": 2}].'
-}
 
 # Recap after compaction: generated from $EVENTS, one line per past window, capped at 40 lines.
 # Structured memo after an intervention: what was done last time, what was expected, what to answer first now.
@@ -1467,6 +1419,11 @@ with an empty plan -- that hands the policy back the scene it had.'
 else
   RESULT_OPTS='"fixed" | "giveup" | "continue"'
   RESTAGE_TAIL='it is the only kind of retry that exists -- nothing rewinds the scene, and whatever
+you have already moved stays moved. When a repair has failed once, the honest ending
+is retreat, then fixed with an empty plan: the policy gets its own pose back and all
+the steps it has left. Two attempts from one takeover is the limit; a third small
+correction from wherever the hand now is, is how interventions run an episode out.'
+  [ "$FAMILY" = robodojo ] && RESTAGE_TAIL='it is the only kind of retry that exists -- nothing rewinds the scene, and whatever
 you have already moved stays moved. When a repair fails, read its OUTCOME and the fresh
 image, then try a materially different approach -- another point, angle or height, the
 other arm, pi0_pick, a push -- rather than repeating the same op. If a second method also
@@ -1842,7 +1799,7 @@ print(json.dumps(l))")
     if [ -n "$FORCE_GPT" ]; then log "  window $W screener skipped ($FORCE_GPT) -> calling $MODEL"; fi
     if [ -z "$FORCE_GPT" ] && [ "$SCREEN" = 1 ] && [ -n "$TELF" ] && [ -n "$MONT" ] && [ "${ESC_ACTIVE:-0}" = 0 ]; then
       SCREEN_EXPECT=""; SCREEN_EXPECT_AGE=""
-      if [ -n "${IV_LAST_W:-}" ] && [ -n "${IV_EXPECT:-}" ] && [ $((W - IV_LAST_W)) -le 3 ]; then
+      if [ "$FAMILY" = robodojo ] && [ -n "${IV_LAST_W:-}" ] && [ -n "${IV_EXPECT:-}" ] && [ $((W - IV_LAST_W)) -le 3 ]; then
         SCREEN_EXPECT="$IV_EXPECT"; SCREEN_EXPECT_AGE=$((W - IV_LAST_W)); fi
       export SCREEN_EXPECT SCREEN_EXPECT_AGE
       # stderr goes to driver.log instead of being discarded -- that is where screener config errors used to be swallowed.
@@ -2006,8 +1963,7 @@ $TEL
 
 $MEM
 
-Read the numbers above before you look at the image. Intervene only on clear failure
-evidence, following the stages in STAGED REPAIR.
+Read the numbers above before you look at the image. $BAR_LINE
 $IV_BLOCK
 
 $PLAN_SPEC
@@ -2215,7 +2171,7 @@ print(int(100 * ct / mx) if mx > 0 else 0)" 2>/dev/null)
       fi
     fi
     if [ "$V" = "intervene" ] && [ "$GAVEUP" = "0" ] && { [ "$NINT" -lt "$MAX_INTERVENTIONS" ] || [ "${ESC_ACTIVE:-0}" = 1 ]; }; then
-      if [ "${ESC_ACTIVE:-0}" = 1 ] && [ "${ESC_N:-0}" -gt 0 ]; then ESC_WINS=$((ESC_WINS+1)); else NINT=$((NINT+1)); fi; IN_IV=1; ACT_SID=""; ACT_COMPACT_PENDING=0
+      if [ "${ESC_ACTIVE:-0}" = 1 ] && [ "${ESC_N:-0}" -gt 0 ]; then ESC_WINS=$((ESC_WINS+1)); else NINT=$((NINT+1)); fi; IN_IV=1
       STALE=""
       if [ "$ASYNC" != 0 ]; then
         # The judge decided on window $W, but the policy kept going. Stop it at the end of the window it is
@@ -2319,28 +2275,6 @@ $RESTAGE_TAIL"
       $H open-budget --budget $INTERVENE_BUDGET --control-token "$WTOK" >/dev/null 2>&1
       # The first plan is the one from the judging turn; no extra question.
       PLAN=$(jfield "$JJ" plan)
-      if [ -n "${ACT_ENGINE:-}" ]; then
-        # fx: the judge's plan is not executed; ACT_MODEL writes the repair from the judge's reading of the window.
-        printf '%s' "$PLAN" > "$CD/judge_plan_w$W.json"
-        act_handover > "$CD/p_handover_w$W.txt"
-        claude_turn "$CD/p_handover_w$W.txt" "$CD/handover_w$W.json" $ACT_DEADLINE "$JMONT" "Read"
-        PLAN=$(jfield "$(extract_json "$CD/handover_w$W.json")" plan)
-        if [ -z "$PLAN" ] || [ "$PLAN" = "[]" ] || [ "$PLAN" = "None" ]; then
-          printf '%s\n' 'Your answer had no executable plan. Send the json again with at least one step in "plan" (or [{"op": "policy", "chunks": 2}] to let the policy carry on).' > "$CD/p_handover2_w$W.txt"
-          claude_turn "$CD/p_handover2_w$W.txt" "$CD/handover2_w$W.json" $ACT_DEADLINE "" "Read"
-          PLAN=$(jfield "$(extract_json "$CD/handover2_w$W.json")" plan)
-        fi
-        if [ -z "$PLAN" ] || [ "$PLAN" = "[]" ] || [ "$PLAN" = "None" ]; then
-          PLAN='[{"op": "policy", "chunks": 2}]'; log "  window $W $ACT_MODEL gave no plan twice -> handing back to the policy"
-        fi
-        log "  window $W repair by $ACT_MODEL: $(python3 -c "
-import json,sys
-try: print('>'.join(str(s.get('op')) for s in json.loads(sys.argv[1])))
-except Exception: print('?')" "$PLAN" 2>/dev/null) (judge had proposed $(python3 -c "
-import json,sys
-try: print('>'.join(str(s.get('op')) for s in json.loads(sys.argv[1])))
-except Exception: print('?')" "$(cat "$CD/judge_plan_w$W.json")" 2>/dev/null))"
-      fi
       SHAPE=$(python3 -c "
 import json,sys
 try: print('>'.join(str(s.get('op'))+('/'+str(s.get('to')) if s.get('to') else '') for s in json.loads(sys.argv[1])))
@@ -2473,6 +2407,10 @@ you have just undone its re-approach as well. Send a materially different approa
 line in, a lower grasp, the other arm, pi0_pick, a push -- as continue. Answer fixed with an
 empty plan (handing the policy back its pose) when the step is done, or when this method
 failed twice and no materially different one is left."
+          [ "$FAMILY" = robodojo ] || NEXTHINT="${NEXTHINT%%you have just undone its re-approach as well. Send*}you have just undone its re-approach as well; do not make that a habit. If you have a materially different approach -- a different
+line in, a lower grasp, letting the policy make the close -- send it as continue.
+Otherwise answer fixed with an empty plan: that hands the policy back its pose,
+and an intervention ended this way is not counted against your allowance."
         fi
         R=$((R+1))
         # Hand the execution result back to the model: continue with the next segment or finish. It Reads the image itself.
