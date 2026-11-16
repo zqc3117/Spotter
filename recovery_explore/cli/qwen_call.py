@@ -1,3 +1,4 @@
+import json
 #!/usr/bin/env python3
 """Judge channel for a local Qwen (vLLM, OpenAI chat completions); same interface as gpt6_call.py.
 
@@ -20,6 +21,61 @@ def _image_part(path: str) -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
 
 
+POINT_TILES = os.environ.get("QWEN_POINT_TILES", "0") == "1"   # the driver turns it on for RoboCasa
+CAMS = ("primary", "secondary", "wrist")
+
+
+def _png_part(im) -> dict:
+    import io
+    b = io.BytesIO(); im.save(b, "PNG")
+    return {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()}}
+
+
+def _image_parts_split(path: str) -> list:
+    """2026-10-17: Qwen points in 0-1000 coordinates of ONE image; on a stitched picture its column arithmetic
+    fails (a 215 px miss on a 512 tile). So the checkpoint picture (three 512 tiles side by side) goes as three
+    labelled camera images, and a window montage (rows primary/secondary/wrist, columns oldest -> newest, 256 tiles,
+    stacked windows oldest first) is kept whole and followed by the newest frame of each camera on its own."""
+    if not POINT_TILES:
+        return [_image_part(path)]
+    try:
+        from PIL import Image
+        im = Image.open(path).convert("RGB")
+    except Exception:
+        return [_image_part(path)]
+    W, H = im.size
+    side = path + ".newest"
+    if os.path.exists(side):
+        try:
+            nw = json.load(open(side)); parts = [_image_part(path)]
+            for cam, fp in zip(CAMS, nw):
+                parts.append({"type": "text", "text": f"{cam} camera, current frame (point targets in this picture):"})
+                parts.append(_png_part(Image.open(fp).convert("RGB")))
+            return parts
+        except Exception:
+            pass
+    tile = int(os.environ.get("QWEN_TILE", "0") or 0)
+    if tile and W != 3 * H and W % tile == 0 and H >= 3 * tile:
+        top = H - 3 * tile; parts = [_image_part(path)]
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, newest frame (point targets in this picture):"})
+            parts.append(_png_part(im.crop((W - tile, top + i * tile, W, top + (i + 1) * tile))))
+        return parts
+    if W == 3 * H:  # checkpoint: primary | secondary | wrist
+        t = H; parts = []
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, now:"})
+            parts.append(_png_part(im.crop((i * t, 0, (i + 1) * t, t))))
+        return parts
+    if W % 4 == 0 and H % (3 * (W // 4)) == 0:  # montage(s): 3 rows x 4 columns of square tiles
+        t = W // 4; top = H - 3 * t; parts = [_image_part(path)]
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, newest frame (point targets in this picture):"})
+            parts.append(_png_part(im.crop((3 * t, top + i * t, 4 * t, top + (i + 1) * t))))
+        return parts
+    return [_image_part(path)]
+
+
 def _trim(msgs: list) -> list:
     """Keep the first turn as is; strip images from and truncate middle turns; keep the last KEEP_RECENT_TURNS turns as is."""
     if len(msgs) <= 2 + 2 * KEEP_RECENT_TURNS:
@@ -34,6 +90,45 @@ def _trim(msgs: list) -> list:
             mid.append({"role": "assistant", "content": str(m["content"])[:1200]})
     return head + mid + tail
 
+
+
+
+def _json_object(text: str):
+    """The reply itself if it parses as a JSON object, else the first balanced {...} in it that does."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", t).strip()
+    try:
+        if isinstance(json.loads(t), dict):
+            return t
+    except Exception:
+        pass
+    for i, ch in enumerate(t):
+        if ch != "{":
+            continue
+        depth, instr, esc = 0, False, False
+        for j in range(i, len(t)):
+            c = t[j]
+            if instr:
+                esc = (c == "\\") and not esc
+                if c == '"' and not esc:
+                    instr = False
+                continue
+            if c == '"':
+                instr = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    cand = t[i:j + 1]
+                    try:
+                        if isinstance(json.loads(cand), dict):
+                            return cand
+                    except Exception:
+                        pass
+                    break
+    return None
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -64,7 +159,7 @@ def main() -> None:
     if not content:
         content = [{"type": "text", "text": prompt}]
     if a.image and os.path.exists(a.image):
-        content.append(_image_part(a.image))
+        content.extend(_image_parts_split(a.image))
 
     if a.resume and os.path.exists(a.resume):
         tpath = a.resume
@@ -80,7 +175,7 @@ def main() -> None:
     # not closed by then, a closing line and </think> are appended as the assistant's own text and the
     # model continues with the answer (vLLM continue_final_message), which gets its own 3000 tokens.
     thinking = a.think == "1"
-    think_budget = int(os.environ.get("QWEN_THINK_BUDGET") or 2000)
+    think_budget = int(os.environ.get("QWEN_THINK_BUDGET") or 5000)
     answer_tokens = 3000
     payload = {"model": a.model, "messages": _trim(msgs), "max_tokens": think_budget if thinking else answer_tokens,
                "temperature": 0.2, "chat_template_kwargs": {"enable_thinking": thinking}}
@@ -153,6 +248,31 @@ def main() -> None:
             if attempt < a.retries:
                 time.sleep(3); continue
             break
+    if rec["result"] and not rec["result"].lstrip().startswith('{"type": "error"'):
+        obj = _json_object(rec["result"])
+        if obj is None:
+            try:   # one follow-up turn, thinking off: only the JSON object
+                fix_msgs = list(msgs) + [{"role": "user", "content": "Reply now with ONLY the JSON object your "
+                                          "instructions ask for -- no analysis, no markdown, nothing else."}]
+                fp = dict(payload, messages=_trim(fix_msgs), max_tokens=1500,
+                          chat_template_kwargs={"enable_thinking": False})
+                port = PORTS[start % len(PORTS)]
+                rq = urllib.request.Request(f"http://{HOST}:{port}/v1/chat/completions", data=json.dumps(fp).encode(),
+                                            headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(rq, timeout=a.timeout) as rs:
+                    dd = json.loads(rs.read().decode())
+                t2 = (((dd.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                t2 = re.sub(r"<think>.*?</think>", "", t2, flags=re.S).strip()
+                obj = _json_object(t2)
+                rec["json_followup"] = True
+            except Exception as e:
+                rec["json_followup_error"] = f"{type(e).__name__}: {e}"
+        if obj is not None and obj != rec["result"]:
+            rec["raw_result"] = rec["result"][:4000]
+            rec["result"] = obj
+            if msgs and msgs[-1].get("role") == "assistant":
+                msgs[-1] = {"role": "assistant", "content": obj}
+                json.dump(msgs, open(tpath, "w"), ensure_ascii=False)
     rec["duration_ms"] = int((time.time() - t0) * 1000)
     if not rec["result"] and last:
         rec["result"] = json.dumps({"type": "error", "message": last}, ensure_ascii=False)

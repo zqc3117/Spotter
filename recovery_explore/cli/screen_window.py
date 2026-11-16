@@ -132,9 +132,23 @@ def main() -> int:
         # from the gripper openings: a hand closed to <= 0.05 in some chunk of the window = closed on nothing.
         if str(a.family) in ("robotwin", "robodojo") and isinstance(r, dict):
             hit = False
-            for line in tel.splitlines():
+            thr = float(os.environ.get("RD_GRIP_EMPTY", "0.20")) if str(a.family) == "robodojo" else 0.05
+            if str(a.family) == "robodojo":
+                # RoboDojo table rows: "chunk  steps  left_cm right_cm left_open right_open joint_err" (rdv8 fix: the
+                # robotwin pattern below never matched these rows, so rule_hit was always False). Newest rows only.
+                rows = [mm for mm in (re.match(r"^\d+\s+\d+-\d+\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)", ln)
+                                      for ln in tel.splitlines()) if mm]
+                try: nrow = max(1, int(os.environ.get("SCREEN_RULE_ROWS") or 3))
+                except ValueError: nrow = 3
+                hit = any(min(float(mm.group(3)), float(mm.group(4))) <= thr for mm in rows[-nrow:])
+                stall_cm = float(os.environ.get("SCREEN_STALL_CM", "0") or 0)
+                if not hit and stall_cm > 0 and len(rows) >= 4:
+                    tr = lambda rs: sum(float(mm.group(1)) + float(mm.group(2)) for mm in rs)
+                    if tr(rows[-2:]) < stall_cm and tr(rows[-4:-2]) < stall_cm:
+                        hit = True
+            for line in ([] if str(a.family) == "robodojo" else tel.splitlines()):
                 m = re.match(r"^\d+\s+\d+-\d+\s+\([^)]*\)\s+\([^)]*\)\s+([\d.]+)\s*/\s*([\d.]+)", line)
-                if m and min(float(m.group(1)), float(m.group(2))) <= 0.05:
+                if m and min(float(m.group(1)), float(m.group(2))) <= thr:
                     hit = True; break
             r["rule_hit"] = hit
             risk = r.get("risk")
