@@ -7,7 +7,7 @@
 #   bash spotter.sh summary [RUN]                                 success rates of finished runs
 #
 # SET is smoke (1 episode, default), s500q96 (96), sall500 (1,200, the paper's RoboCasa set), rt50x5q (250) /
-# rt50x10n (500) for RoboTwin, or a file with one TASK:SEED:EPISODE per line. Run options:
+# rt50x10n / rt500 (500) for RoboTwin, or a file with one TASK:SEED:EPISODE per line. Run options:
 #   --lanes N        parallel lanes (default 1); lane N uses simulation port 8450+N
 #   --sim-gpus N     GPUs the simulation services are spread over, GPU 0..N-1 (default: all visible)
 #   --arm A          both (control + treatment on each episode, default) | treat | ctrl
@@ -107,8 +107,8 @@ cmd_run() {
   local queue_src
   case "$set" in
     smoke) queue_src="" ;;
-    s500q96|sall500|rt50x5q|rt50x10n|rt_ctlcheck12) queue_src="recovery_explore/episode_sets/$set.txt" ;;
-    *) [ -f "$set" ] || die "unknown set '$set' (smoke | s500q96 | sall500 | rt50x5q | rt50x10n | path to a TASK:SEED:EPISODE file)"; queue_src="$set" ;;
+    s500q96|sall500|rt50x5q|rt50x10n|rt500|rt150|rt_ctlcheck12) queue_src="recovery_explore/episode_sets/$set.txt" ;;
+    *) [ -f "$set" ] || die "unknown set '$set' (smoke | s500q96 | sall500 | rt50x5q | rt50x10n | rt500 | rt150 | path to a TASK:SEED:EPISODE file)"; queue_src="$set" ;;
   esac
   [ -n "$run" ] || run="${fam}_$(basename "${set%.txt}")"
   local ctrl_only=0 skip_ctrl=0
@@ -133,6 +133,7 @@ cmd_run() {
     ALLOW_RESET="${ALLOW_RESET:-0}" MAX_RESETS="${MAX_RESETS:-0}" LEARN="${LEARN:-0}"
     FEWSHOT="$([ $oneshot = 1 ] && echo 1 || echo "${FEWSHOT:-0}")" FEWSHOT_MAX_IMAGES="${FEWSHOT_MAX_IMAGES:-12}"
     CTRL_ONLY=$ctrl_only SKIP_CONTROL=$skip_ctrl
+    JUDGE_DEADLINE="${JUDGE_DEADLINE:-1200}" ACT_DEADLINE="${ACT_DEADLINE:-2400}"
   )
   if [ "$fam" = robotwin ]; then
     [ -n "${ROBOTWIN_RUNTIME:-}" ] || [ "$dry" = 1 ] || die "set ROBOTWIN_RUNTIME in env/env.sh (the RoboTwin portable runtime: .venv + worktree/third_party/RoboTwin, see README)"
@@ -141,7 +142,6 @@ cmd_run() {
       ROBOTWIN_TASK_CONFIG="${ROBOTWIN_TASK_CONFIG:-demo_randomized}"
       ROBOTWIN_SEED_CACHE="${ROBOTWIN_SEED_CACHE:-$REPO/recovery_explore/episode_sets/robotwin_seed_cache/demo_randomized_seed0_n100.json}"
       RT_MEMORY="${RT_MEMORY:-1}" RT_MEMORY_BANK="${RT_MEMORY_BANK:-memory_bank_robotwin_noreset}"
-      JUDGE_DEADLINE="${JUDGE_DEADLINE:-1200}" ACT_DEADLINE="${ACT_DEADLINE:-2400}"
     )
     [ -z "${ROBOTWIN_RUNTIME:-}" ] || envs+=(ROBOTWIN_RUNTIME="$ROBOTWIN_RUNTIME")
     [ -z "${ROBOTWIN_ROOT:-}" ] || envs+=(ROBOTWIN_ROOT="$ROBOTWIN_ROOT")

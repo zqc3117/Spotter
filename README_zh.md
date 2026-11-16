@@ -7,20 +7,18 @@
 <p align="center">如果我们的项目对你有帮助，欢迎在 GitHub 上点一个 star ⭐ 支持我们</p>
 
 <p align="center">
-  <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111?style=for-the-badge" alt="English"></a>
-  <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836?style=for-the-badge" alt="中文"></a>
-</p>
-
-<p align="center">
-  <a href="https://arxiv.org/abs/2609.36808"><img src="https://img.shields.io/badge/arXiv-2609.36808-b31b1b?style=for-the-badge" alt="arXiv"></a>
-  <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-Spotter-2ea44f?style=for-the-badge" alt="Project page"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://robocasa.ai"><img src="https://img.shields.io/badge/Simulator-RoboCasa-4c8bf5?style=for-the-badge" alt="RoboCasa"></a>
+  <a href="https://arxiv.org/abs/2609.36808"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"></a>
+  <a href="https://zqc3117.github.io/Spotter/"><img src="https://img.shields.io/badge/Project_Page-2ea44f?logo=googlechrome&logoColor=white" alt="Project page"></a>
+  <a href="#-联系方式"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-07c160?logo=wechat&logoColor=white" alt="微信群"></a>
+  <a href="https://discord.gg/dcsEJHE4Pk"><img src="https://img.shields.io/badge/Discord-5865f2?logo=discord&logoColor=white" alt="Discord"></a>
+  <br>
+  <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-007ec6" alt="English"></a>
+  <a href="./README_zh.md"><img src="https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-d14836" alt="简体中文"></a>
 </p>
 
 | 📄 论文 | 🏠 项目主页 | 🤖 模型权重 | 🌐 仿真器 | 🚀 上手 |
 |---|---|---|---|---|
-| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B) | [RoboCasa](https://robocasa.ai) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
+| [arXiv](https://arxiv.org/abs/2609.36808) | [zqc3117.github.io/Spotter](https://zqc3117.github.io/Spotter/) | [pi0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) · [Cosmos Policy](https://huggingface.co/nvidia/Cosmos-Policy-RoboCasa-Predict2-2B)（RoboCasa）· [pi0.5](https://huggingface.co/motus-robotics/pi0.5_robotwin2)（RoboTwin 2.0） | [RoboCasa](https://robocasa.ai) · [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) | [安装](#-环境配置) · [快速开始](#-用发布的权重评测) |
 
 <p align="center">
   <img src="assets/teaser.png" width="100%" alt="Spotter 总览：具身模型逐段执行，快速 VLM 并行筛查每一段，前沿 VLM 只在确认出错时判断并修复；右侧为成功率和单集耗时。">
@@ -29,6 +27,12 @@
 **Spotter** 在冻结的具身模型（System 1）和 VLM（System 2）之间加入了一个轻量的介入机制。
 它不让 VLM 规划每一步，而是让具身模型主导并持续执行；本地筛子并行关注执行进展，只有确认出错时，VLM 才介入确认并纠正。
 交给 VLM 的任务因此简单得多，整个框架**用本地部署的开源 Qwen、不借助任何特权信息**就能运行。
+
+## 📰 最新动态
+
+- [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
+- [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
+- [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
 
 ## 🎬 演示
 
@@ -71,6 +75,14 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 
 用 Qwen 时，成功的 episode 平均调用判别器**不到 1 次**，只比策略单独运行多 **13–16 秒**；和用同一个 Qwen 的 VLM 主导方法相比，耗时少约 **70%**。
 
+> **仿真器。** Spotter 同时支持 [RoboCasa](#robocasa) 和 [RoboTwin 2.0](#robotwin-20)。RoboTwin 2.0 可以一条命令
+> `bash robotwin_eval.sh` 跑完整个评测（见[用发布的权重评测](#-用发布的权重评测)）。
+>
+> **RoboTwin 2.0 的实验结果和完整记录**（每集的画面、提示词和回复）：
+> [50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)（策略独跑 vs. Spotter-Qwen），
+> 以及 [150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)（策略独跑、Spotter 和 VLM 主导的智能体，
+> 后两者各用 Qwen 和 GPT）。
+
 ## 📑 目录
 
 - [文件结构](#-文件结构)
@@ -82,13 +94,14 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
 - [输出](#-输出) · [配置参考](#-配置参考)
-- [致谢](#-致谢) · [许可证](#-许可证) · [引用](#-引用)
+- [致谢](#-致谢) · [许可证](#-许可证) · [联系方式](#-联系方式) · [引用](#-引用)
 
 ## 📂 文件结构
 
 ```text
 Spotter/
 ├── spotter.sh                        # 统一入口：部署 Qwen / 策略服务、运行、汇总结果
+├── robotwin_eval.sh                  # RoboTwin 2.0 一键评测（起服务 + Spotter 组 + 对照组 + 汇总）
 ├── recovery_explore/                 # Spotter 本体
 │   ├── judge_driver_v7.sh            # 单个 lane 的监督循环：筛查 -> 判别 -> 修复 -> 验证
 │   ├── env_service.py                # RoboCasa 仿真服务（RPC），由 launch_svc.sh 启动
@@ -96,11 +109,13 @@ Spotter/
 │   ├── robotwin_intervention.py      # RoboTwin 修复原语（双臂）；robodojo_intervention.py 是它的基类
 │   ├── robotwin_policy_server.py     # RoboTwin 的 pi0.5 策略服务（openpi websocket 协议）
 │   ├── primitives.py                 # 判别器组合修复计划所用的运动原语
+│   ├── grasp_aim.py                  # RoboCasa 的 `aim` 步骤：在腕部深度图里找到物体并规划抓取
+│   ├── render_guard.py               # RoboCasa：EGL 上下文泄漏导致黑帧/噪声帧时自动重新渲染
 │   ├── JUDGE_BRIEF_V7.md             # 判别器提示词；BRIEF_PNP.md / BRIEF_MECH.md / BRIEF_RT.md 是分任务类型的补充
 │   ├── cli/                          # 筛子、判别通道（Qwen / GPT）、harness、few-shot 工具
 │   ├── memory_bank/                  # 冻结的 77 条通用经验（RoboCasa）
 │   ├── memory_bank_robotwin_noreset/ # RoboTwin 2.0 的经验
-│   ├── episode_sets/                 # sall500.txt（论文，1200 集）· s500q96.txt（96 集，调试用）· rt50x10n.txt（RoboTwin 2.0，500 集）
+│   ├── episode_sets/                 # sall500.txt（论文，1200 集）· s500q96.txt（96 集，调试用）· rt500.txt / rt150.txt（RoboTwin 2.0）
 │   ├── fewshot_bank/                 # （需下载）1-shot 设置用的示例；robotwin/ 子目录给 RoboTwin 2.0
 │   └── runs_<RUN>_<策略>/            # （运行时生成）results.jsonl、各 lane 日志、给判别器看的画面
 ├── rpc/                              # π0.5 策略服务、RPC 协议、RoboCasa rollout 与采集脚本
@@ -112,13 +127,20 @@ Spotter/
 
 ## 🔧 环境配置
 
-RoboCasa 用到三个 Python 环境：
+**Qwen 筛子和判别器。** vLLM 单独一个环境，再准备本地的 `env/env.sh`：
+
+```bash
+python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
+cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
+```
+
+**RoboCasa。** RoboCasa 用到三个 Python 环境：
 
 | 环境 | Python | 运行什么 | 安装 |
 |---|---|---|---|
 | `robocasa` | 3.10 | 仿真服务、判别 driver、Cosmos 策略服务 | 按 [Cosmos Policy](https://github.com/NVlabs/cosmos-policy) 的 RoboCasa 说明安装，再装 `env/requirements-robocasa.txt` |
 | `pi05` | 3.12 | π0.5 策略服务（LeRobot） | `env/requirements-pi05.txt` |
-| `vllm` | 3.10+ | Qwen 筛子和判别器 | `pip install vllm` |
+| `vllm` | 3.10+ | Qwen 筛子和判别器 | 见上面的 Qwen 步骤 |
 
 ```bash
 # 1) RoboCasa + Cosmos Policy：按 https://github.com/NVlabs/cosmos-policy 的 RoboCasa 说明安装，然后
@@ -126,17 +148,11 @@ pip install -r env/requirements-robocasa.txt
 
 # 2) π0.5
 python3.12 -m venv .venvs/pi05 && .venvs/pi05/bin/pip install -r env/requirements-pi05.txt
-
-# 3) Qwen 用的 vLLM
-python3 -m venv .venvs/vllm && .venvs/vllm/bin/pip install vllm
-
-# 4) 让 Spotter 找到上面的安装位置
-cp env/env.sh.example env/env.sh && $EDITOR env/env.sh
 ```
 
 > **注意**：无显示器的 MuJoCo 渲染需要支持 EGL 的 NVIDIA GPU（`MUJOCO_GL=egl`，已在 `env/env.sh` 中设置）。
 
-**RoboTwin 2.0（可选）。** Spotter 也可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
+**RoboTwin 2.0。** Spotter 可以跑在 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)
 （aloha-agilex 双臂，SAPIEN 3，50 个任务，`demo_randomized` 场景）上，族名为 `robotwin`。
 
 RoboTwin 的仿真器和规划器（SAPIEN 3、mplib、cuRobo）在它自己的 Python 3.10 环境里，以"便携运行时"的形式布局，
@@ -162,17 +178,27 @@ export ROBOTWIN_POLICY_PYTHON=/path/to/robotwin-policy-venv/bin/python   # 满�
 
 ## 📦 模型准备
 
-**1）下载权重。**
+**1）Qwen 判别器和筛子。**
+
+```bash
+huggingface-cli download Qwen/Qwen3.8-27B-FP8 --local-dir checkpoints/Qwen3.8-27B-FP8
+```
+
+国内用户也可以从 [ModelScope](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8) 下载。然后在 `env/env.sh` 中设置：
+
+```bash
+export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
+export VLLM_VENV=$PWD/.venvs/vllm
+```
+
+**2）RoboCasa。** 下载 π0.5 和 Cosmos Policy：
 
 ```bash
 huggingface-cli download DAVIAN-Robotics/pi05-robocasa-H50         --local-dir checkpoints/pi05-robocasa-H50
 huggingface-cli download nvidia/Cosmos-Policy-RoboCasa-Predict2-2B --local-dir checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B
-huggingface-cli download Qwen/Qwen3.8-27B-FP8                      --local-dir checkpoints/Qwen3.8-27B-FP8
 ```
 
-国内用户也可以从 [ModelScope](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8) 下载 Qwen。
-
-**2）下载后的目录。**
+下载后的目录：
 
 ```text
 checkpoints/
@@ -181,22 +207,20 @@ checkpoints/
 └── Qwen3.8-27B-FP8/
 ```
 
-**3）在 `env/env.sh` 中设置：**
+然后在 `env/env.sh` 中设置：
 
 ```bash
 export PI05_CHECKPOINT=$PWD/checkpoints/pi05-robocasa-H50
 export COSMOS_CHECKPOINT=$PWD/checkpoints/Cosmos-Policy-RoboCasa-Predict2-2B/Cosmos-Policy-RoboCasa-Predict2-2B.pt
-export QWEN_MODEL=$PWD/checkpoints/Qwen3.8-27B-FP8
-export VLLM_VENV=$PWD/.venvs/vllm
 ```
 
-**4）1-shot 设置用的示例库（可选，151 MB）。**
+1-shot 设置需要 RoboCasa 示例库（151 MB）：
 
 ```bash
 curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz | tar -xz -C recovery_explore
 ```
 
-**5）RoboTwin 2.0（可选）。** 策略是 pi0.5 权重
+**3）RoboTwin 2.0。** 策略是 pi0.5 权重
 [motus-robotics/pi0.5_robotwin2](https://huggingface.co/motus-robotics/pi0.5_robotwin2)，放在 RoboTwin 树里的
 `policy/pi0/checkpoints/pi05_robotwin2_clean_randomized/robotwin2/40000/`（见[环境配置](#-环境配置)）。
 1-shot 设置需要把 RoboTwin 示例库（33 MB）下载到 `recovery_explore/fewshot_bank/robotwin/`：
@@ -218,11 +242,13 @@ curl -L https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_r
 
 | 文件 | 集数 | 用途 |
 |---|---:|---|
-| `episode_sets/sall500.txt` | 1200 | 论文评测：24 个任务 × 编号 0–49，seed 500 |
-| `episode_sets/s500q96.txt` | 96 | 调试用子集，每个任务 4 集 |
-| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0 评测：50 个任务 × 10 集 |
+| `episode_sets/sall500.txt` | 1,200 | 论文的 RoboCasa 评测：24 个任务 × 编号 0–49，seed 500 |
+| `episode_sets/s500q96.txt` | 96 | RoboCasa 调试用子集，每个任务 4 集 |
+| `episode_sets/rt50x10n.txt` | 500 | RoboTwin 2.0：50 个任务 × 10 集 |
+| `episode_sets/rt500.txt` | 500 | 发布结果所用的 RoboTwin 2.0 评测集：在 `rt50x10n` 基础上，把当前仿真环境里无法开局的集替换为同任务下一个能开局的集 |
+| `episode_sets/rt150.txt` | 150 | RoboTwin 2.0 上与 VLM 主导智能体的对比：50 个任务 × 3 集，是 `rt500` 的子集 |
 
-经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
+RoboCasa 的经验和示例都是在 seed 195 上学到的，和测试用的 seed 不重叠。
 
 ## 🚀 用发布的权重评测
 
@@ -259,23 +285,6 @@ bash spotter.sh run pi05 sall500 --lanes 8
 bash spotter.sh summary
 ```
 
-| 选项 | 含义 |
-|---|---|
-| `SET` | `smoke`（1 集，默认）、`s500q96`、`sall500`，或每行一个 `任务:种子:编号` 的文件 |
-| `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
-| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
-| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
-| `--one-shot` | 给判别器加一个示例（需要示例库） |
-| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
-| `--dry-run` | 只打印要执行的命令，不真正运行 |
-
-同一个 episode 的两组使用相同的场景、指令和步数预算：
-
-| 组别 | 说明 |
-|---|---|
-| **对照组（Control）** | 只有策略，不调用判别器。 |
-| **实验组（Treatment）** | 策略加判别器，可按需干预。 |
-
 <details>
 <summary>直接调用 driver</summary>
 
@@ -297,17 +306,80 @@ driver 会自己在 `8450+lane` 端口启动和重启仿真服务。同一个 ru
 
 ### RoboTwin 2.0
 
+**一条命令。** `robotwin_eval.sh` 会在 Qwen 和 pi0.5 策略服务没起来时自动启动它们，然后在同一批 500 集（`rt500`）上
+先跑 Spotter 组、再跑纯策略对照组，最后输出汇总。设置和发布结果一致：1.8 倍步数上限、1-shot、Qwen 只在修复回合思考，
+`QWEN_THINK_BUDGET=5000`。
+
+```bash
+bash robotwin_eval.sh --judge-gpus 0,1,2,3 --policy-gpu 4 --lanes 12
+```
+
+加 `--dry-run` 只打印要执行的命令。每个 RoboTwin 仿真大约占 8 GB 显存，32 GB 的卡建议每张跑 3 条 lane。Spotter 组的耗时
+主要在判别器思考上，多给 Qwen 几张卡（`--judge-gpus`）会更快。
+
+<details>
+<summary>分步运行</summary>
+
 第 1 步的 Qwen 服务起来后：
 
 ```bash
 bash spotter.sh policy robotwin --gpu 4              # RoboTwin 的 pi0.5，端口 9100（检查：curl http://127.0.0.1:9100/healthz）
 bash spotter.sh run robotwin                         # 冒烟：adjust_bottle 第 35 集
-bash spotter.sh run robotwin rt50x10n --lanes 12 --one-shot  # 完整评测集（1-shot）
-bash spotter.sh run robotwin rt50x10n --lanes 12 --arm ctrl  # 同一批格的纯策略基线
+bash spotter.sh run robotwin rt500 --lanes 12 --one-shot     # 在 500 个评测集上跑 Spotter 组（1-shot）
+bash spotter.sh run robotwin rt500 --lanes 12 --arm ctrl     # 同一批集上的纯策略对照组
 bash spotter.sh summary
 ```
+</details>
 
-`spotter.sh run robotwin` 使用[配置参考](#-配置参考)里 RoboTwin 那一列的设置，每一项都可以用环境变量覆盖。
+**用这版代码的结果。** 我们用这版代码在 RoboTwin 2.0 上重跑了 Spotter 组，评测集是 `rt500` 的 500 集（1.8 倍步数上限、
+1-shot）；对照组是同样 500 集上的策略独跑：
+
+| 组别 | 成功 |
+|---|---:|
+| 策略独跑（pi0.5） | 240 / 500（48.0%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=2000` | 252 / 500（50.4%） |
+| Spotter-Qwen，`QWEN_THINK_BUDGET=5000`（默认） | 267 / 500（53.4%） |
+
+由于每次运行都有随机因素，这些结果和论文略有差异。我们把逐集结果（每集的画面、判别器提示词和回复）上传到了 ModelScope：
+[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)。
+
+**与 VLM 主导智能体的对比（150 集）。** 在 `rt150`（50 个任务 × 3 集，是 `rt500` 的子集）上，用相同设置（1.8 倍步数上限、
+1-shot、Qwen 只在修复轮思考、上限 5000 token），我们还跑了 GPT 版 Spotter，以及分别用两种模型的 VLM 主导智能体；
+所有组都在同一批集上运行。VLM 主导的智能体逐轮驱动整个任务、把策略当作工具调用，它的代码不在本次发布中。
+
+| 组 | 模型 | 成功 |
+|---|---|---:|
+| 策略独跑（pi0.5） | – | 72 / 150（48.0%） |
+| Spotter | Qwen3.8-27B-FP8 | 79 / 150（52.7%） |
+| Spotter | GPT-6-astra | 84 / 150（56.0%） |
+| VLM 主导的智能体 | Qwen3.8-27B-FP8 | 63 / 150（42.0%） |
+| VLM 主导的智能体 | GPT-6-astra | 84 / 150（56.0%） |
+
+五个组的完整记录（每集的画面、提示词和回复）都在 ModelScope 上：
+[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)。
+
+### 运行选项
+
+`bash spotter.sh run <策略族> [SET] [选项]`，两个仿真器通用：
+
+| 选项 | 含义 |
+|---|---|
+| `SET` | `smoke`（1 集，默认）；RoboCasa：`s500q96`、`sall500`；RoboTwin 2.0：`rt500`、`rt150`、`rt50x10n`；或每行一个 `任务:种子:编号` 的文件 |
+| `--lanes N` | 并行跑的集数；lane `N` 在端口 `8450+N` 上运行自己的仿真服务 |
+| `--sim-gpus N` | 仿真服务共用的卡，即 `0..N-1` 号卡（默认全部） |
+| `--arm` | `both`（每集对照组和 Spotter 都跑，默认）、`treat`（只跑 Spotter）、`ctrl`（只跑策略） |
+| `--one-shot` | 给判别器加一个示例（需要示例库） |
+| `--run NAME` | run 名称（默认 `<策略>_<评测集>`）；同名重跑会接着上次继续 |
+| `--dry-run` | 只打印要执行的命令，不真正运行 |
+
+同一个 episode 的两组使用相同的场景、指令和步数预算：
+
+| 组别 | 说明 |
+|---|---|
+| **对照组（Control）** | 只有策略，不调用判别器。 |
+| **实验组（Treatment）** | 策略加判别器，可按需干预。 |
+
+`spotter.sh run <策略族>` 使用[配置参考](#-配置参考)里对应那一列的设置，每一项都可以用环境变量覆盖。
 
 ## 📊 复现论文结果
 
@@ -379,6 +451,7 @@ recovery_explore/runs_<RUN>_<策略>/
 ```bash
 bash spotter.sh summary            # 所有 run
 bash spotter.sh summary pi05_sall500
+bash spotter.sh summary robotwin_rt500
 ```
 
 ## 🧩 配置参考
@@ -394,6 +467,8 @@ bash spotter.sh summary pi05_sall500
 | 策略服务端口 | 8800 | 8900 | 9100 |
 | 策略服务 | `python -m rpc.server`（上游 Cosmos Policy） | `python -m rpc.policy_server_pi05` | `recovery_explore/robotwin_policy_server.py` |
 
+`spotter.sh run <策略族>` 使用对应那一列的取值，`robotwin_eval.sh` 使用 RoboTwin 2.0 那一列并加上 `--one-shot`，与发布结果一致；每一项都可以用环境变量覆盖。下表是共用参数，“论文取值”指 RoboCasa 的设置，上表的分策略族取值优先。
+
 | 参数 | 论文取值 | 作用 |
 |---|---:|---|
 | `STEP_BUDGET_SCALE` | `1.8` | 步数预算倍率，对照组和实验组必须相同。 |
@@ -406,7 +481,24 @@ bash spotter.sh summary pi05_sall500
 | `QWEN_KEEP_TURNS` | `20` | 完整保留的最近判别轮数。 |
 | `FEWSHOT` | `0` | `1` 表示加一个示例（即 `--one-shot`），需要示例库。 |
 
-Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `2000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（默认 `5000`）个 token；筛子和窗口判别都不思考，`QWEN_REPAIR_THINK=0` 则全部不思考，与论文设置一致。
+
+**思考预算怎么选。** `QWEN_THINK_BUDGET` 按你的 Qwen 服务能承受的程度来设。预算越大，修复计划想得越充分，但每个修复回合
+越慢；预算越小越快，但思考没想完就会被截断。建议取能让修复回合在 `ACT_DEADLINE` 之内完成的最大预算（GPU 较慢、或每个
+副本带的 lane 较多时，也把 `ACT_DEADLINE` 调大），跑完后检查一下大多数修复回合**没有**被截断。每次修复回复都存在该集文件夹
+的 `act_w*_a*_r*.json` 里，思考撞到预算上限时会记 `think_budget_hit: true`：
+
+```bash
+python3 - <<'EOF'
+import glob, json
+files = glob.glob("recovery_explore/runs_<RUN>_<family>/lane*/jd-*/act_w*.json")
+hit = sum(bool(json.load(open(f)).get("think_budget_hit")) for f in files)
+print(f"{hit}/{len(files)} repair turns hit the thinking budget")
+EOF
+```
+
+如果超过一半被截断，就调大预算（或者加 Qwen 副本，让大预算也能跑得快）。在 RoboTwin 2.0 上，预算 2000 时大约 65% 的修复
+回合思考被截断，5000 时大约 44%。
 
 判别器的节奏另有几个开关，默认都是关闭或保守取值：
 
@@ -416,20 +508,50 @@ Qwen 只在介入的修复回合里思考，每次最多 `QWEN_THINK_BUDGET`（�
 | `MISS_GRACE` | `2` | 策略抓空之后，先给它自己重试的窗口数，之后判别器才可以接管。 |
 | `FIRST_IV_FRAC` | `35` | 第一次干预要等到策略至少抓空过一次，或者已经用掉这个百分比的步数预算。`0` 表示不设这个门槛。 |
 | `MONITOR_AFTER_BUDGET` | `1` | 干预次数用完后继续调用判别器，只做记录。`0` 表示不再调用。 |
+| `LATE_IV_FRAC` | `45`（RoboCasa）、`0`（RoboTwin 2.0） | 步数预算用掉这个百分比之后，不再开始*第一次*干预；之后的干预不受影响。`0` 表示关闭。 |
+| `PLAN_ROUNDS` | `5`（RoboCasa）、`3`（RoboTwin 2.0） | 一次干预里判别器最多可以发几段计划。 |
 
-改动 `STEP_BUDGET_SCALE`、`WINDOW` 或策略种类都相当于换了实验；比较不同 run 时应按任务/种子/编号逐集配对，而不只看总成功率。
+**RoboCasa 的修复步骤。** 除了运动原语，RoboCasa 的判别器还有一个 `aim` 步骤：机器人用腕部深度相机向下看，找到上次抓空位置附近
+（或判别器指定位置附近）的物体，沿物体短边抓取，稍微抬起检查是否抓牢，然后报告 `held`、`closed_empty`、`slipped`、`no_object`、
+`too_wide`、`blocked` 或 `step_cap`。抓牢后紧接着交还给策略时，夹爪会保持闭合（也可以显式写 `{"op": "policy", "hold": true}`）。
+像素目标写成单张相机图像内 0–1000 归一化的 `[行, 列]`（`PIXEL_FRAME=1000`；设为 `512` 则按原始像素），并且每个相机单独作为一张图给
+Qwen 用来指点（`QWEN_POINT_TILES=1`）。判别器用到的信息全部来自相机和机器人自身的关节、夹爪读数。
+
+改动 `STEP_BUDGET_SCALE`、`WINDOW` 或策略种类都相当于换了实验。比较不同 run 时只在同一个评测集上比较；由于策略的运行不能逐比特复现，应比较总成功率，而不是单集结果。
 
 ## 🙏 致谢
 
 - [RoboCasa](https://robocasa.ai)：我们评测所用的仿真基准和场景资源。
 - [Cosmos Policy](https://github.com/NVlabs/cosmos-policy)：发布的 RoboCasa 权重及其策略服务。
 - [π0.5](https://huggingface.co/DAVIAN-Robotics/pi05-robocasa-H50) 与 [LeRobot](https://github.com/huggingface/lerobot)：RoboCasa 上的 π0.5 权重以及加载它的库。
+- [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin) 与 [RoboTwin 2.0 的 pi0.5 权重](https://huggingface.co/motus-robotics/pi0.5_robotwin2)：我们评测所用的双臂仿真基准和策略权重。
 - [Qwen](https://huggingface.co/Qwen) 与 [vLLM](https://github.com/vllm-project/vllm)：本地部署的筛子和判别器。
 - [RPent](https://github.com/RLinf/RPent)：`recovery_explore/` 中部分代码改编自它（Apache-2.0，见 `THIRD_PARTY_NOTICES.md`）。
 
 ## 📜 许可证
 
 本项目以 [MIT 许可证](LICENSE) 发布。`recovery_explore/` 中有部分文件改编自 RPent，仍遵循 Apache License 2.0，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 📬 联系方式
+
+有问题、想分享结果，或者想关注项目进展？欢迎加入交流群：
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="assets/community/wechat_group.png" alt="Spotter 微信交流群二维码" width="200"><br>
+      <b>微信交流群</b><br>
+      扫码加入
+    </td>
+    <td align="center" width="50%">
+      <a href="https://discord.gg/dcsEJHE4Pk"><img src="assets/community/discord_qr.png" alt="Spotter Discord 二维码" width="200"></a><br>
+      <b>Discord</b><br>
+      <a href="https://discord.gg/dcsEJHE4Pk">discord.gg/dcsEJHE4Pk</a>
+    </td>
+  </tr>
+</table>
+
+也可以在 [GitHub Discussions](https://github.com/zqc3117/Spotter/discussions) 提问和交流想法，在 [Issues](https://github.com/zqc3117/Spotter/issues) 反馈 bug，或发邮件联系 Qichao Zhao：[zhaoqc25@mails.tsinghua.edu.cn](mailto:zhaoqc25@mails.tsinghua.edu.cn)。
 
 ## 📖 引用
 
