@@ -111,7 +111,8 @@ def robodojo_telemetry_lines(tel: dict, r: dict) -> list:
     lines = [f"What the arms did in the last {len(shown)} chunk(s)"
              + (f" (of {len(allc)} so far this episode; earlier chunks not shown)"
                 if len(allc) > len(shown) else "")
-             + ". Travel is in cm, opening is 0 (shut) to 1 (open):",
+             + (". Travel is in cm, opening is the measured finger position from 1 (open) down to about 0.19 where the fingers meet:"
+                if os.environ.get("FAMILY_OVERRIDE") == "robodojo" else ". Travel is in cm, opening is 0 (shut) to 1 (open):"),
              # Explicit per-arm column names. The first version wrote one
              # "L/R" column per quantity; the judge read the pair correctly
              # but then had to keep re-deriving which side was which, and the
@@ -228,7 +229,9 @@ def robodojo_telemetry_lines(tel: dict, r: dict) -> list:
         lines.append(f"Policy steps used so far: {int(_ct)} of {int(_mx)} "
                      f"({max(0, int(_mx) - int(_ct))} left"
                      + (f"; one chunk is {int(hz)} steps" if hz else "") + "). "
-                     "Chunks you hand back with a policy step come out of these; your own moves do not.")
+                     + ("Every step counts against this limit, the policy's chunks and your own moves alike."
+                        if os.environ.get("INTERVENE_CHARGES_STEP_LIM") == "1" else
+                        "Chunks you hand back with a policy step come out of these; your own moves do not."))
     return lines
 
 

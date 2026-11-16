@@ -1,3 +1,4 @@
+import json
 #!/usr/bin/env python3
 """Judge channel for a local Qwen (vLLM, OpenAI chat completions); same interface as gpt6_call.py.
 
@@ -43,6 +44,23 @@ def _image_parts_split(path: str) -> list:
     except Exception:
         return [_image_part(path)]
     W, H = im.size
+    side = path + ".newest"
+    if os.path.exists(side):
+        try:
+            nw = json.load(open(side)); parts = [_image_part(path)]
+            for cam, fp in zip(CAMS, nw):
+                parts.append({"type": "text", "text": f"{cam} camera, current frame (point targets in this picture):"})
+                parts.append(_png_part(Image.open(fp).convert("RGB")))
+            return parts
+        except Exception:
+            pass
+    tile = int(os.environ.get("QWEN_TILE", "0") or 0)
+    if tile and W != 3 * H and W % tile == 0 and H >= 3 * tile:
+        top = H - 3 * tile; parts = [_image_part(path)]
+        for i, cam in enumerate(CAMS):
+            parts.append({"type": "text", "text": f"{cam} camera, newest frame (point targets in this picture):"})
+            parts.append(_png_part(im.crop((W - tile, top + i * tile, W, top + (i + 1) * tile))))
+        return parts
     if W == 3 * H:  # checkpoint: primary | secondary | wrist
         t = H; parts = []
         for i, cam in enumerate(CAMS):
@@ -72,6 +90,45 @@ def _trim(msgs: list) -> list:
             mid.append({"role": "assistant", "content": str(m["content"])[:1200]})
     return head + mid + tail
 
+
+
+
+def _json_object(text: str):
+    """The reply itself if it parses as a JSON object, else the first balanced {...} in it that does."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", t).strip()
+    try:
+        if isinstance(json.loads(t), dict):
+            return t
+    except Exception:
+        pass
+    for i, ch in enumerate(t):
+        if ch != "{":
+            continue
+        depth, instr, esc = 0, False, False
+        for j in range(i, len(t)):
+            c = t[j]
+            if instr:
+                esc = (c == "\\") and not esc
+                if c == '"' and not esc:
+                    instr = False
+                continue
+            if c == '"':
+                instr = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    cand = t[i:j + 1]
+                    try:
+                        if isinstance(json.loads(cand), dict):
+                            return cand
+                    except Exception:
+                        pass
+                    break
+    return None
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -191,6 +248,32 @@ def main() -> None:
             if attempt < a.retries:
                 time.sleep(3); continue
             break
+    # QWEN_JSON_FIX=1 (the driver sets it for RoboDojo): one follow-up turn when the reply is not a JSON object.
+    if os.environ.get("QWEN_JSON_FIX", "0") == "1" and rec["result"] and not rec["result"].lstrip().startswith('{"type": "error"'):
+        obj = _json_object(rec["result"])
+        if obj is None:
+            try:   # one follow-up turn, thinking off: only the JSON object
+                fix_msgs = list(msgs) + [{"role": "user", "content": "Reply now with ONLY the JSON object your "
+                                          "instructions ask for -- no analysis, no markdown, nothing else."}]
+                fp = dict(payload, messages=_trim(fix_msgs), max_tokens=1500,
+                          chat_template_kwargs={"enable_thinking": False})
+                port = PORTS[start % len(PORTS)]
+                rq = urllib.request.Request(f"http://{HOST}:{port}/v1/chat/completions", data=json.dumps(fp).encode(),
+                                            headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(rq, timeout=a.timeout) as rs:
+                    dd = json.loads(rs.read().decode())
+                t2 = (((dd.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                t2 = re.sub(r"<think>.*?</think>", "", t2, flags=re.S).strip()
+                obj = _json_object(t2)
+                rec["json_followup"] = True
+            except Exception as e:
+                rec["json_followup_error"] = f"{type(e).__name__}: {e}"
+        if obj is not None and obj != rec["result"]:
+            rec["raw_result"] = rec["result"][:4000]
+            rec["result"] = obj
+            if msgs and msgs[-1].get("role") == "assistant":
+                msgs[-1] = {"role": "assistant", "content": obj}
+                json.dump(msgs, open(tpath, "w"), ensure_ascii=False)
     rec["duration_ms"] = int((time.time() - t0) * 1000)
     if not rec["result"] and last:
         rec["result"] = json.dumps({"type": "error", "message": last}, ensure_ascii=False)

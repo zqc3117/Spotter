@@ -31,6 +31,7 @@ so the whole framework works with a **locally served, open-source Qwen and no pr
 
 ## 📰 What's New
 
+- [2026/11] 🔥 Spotter now supports **RoboDojo**, with VPP2 as the embodied policy and GPT-6.1-sol as the judge. On 540 episodes (54 tasks × 10) it scores 43.34 against 40.35 for VPP2 alone (Avg. w/o Open 51.49 vs 48.90), with 3× the official step budget. See [RoboDojo](#robodojo).
 - [2026/10] 🔥 RoboCasa: we release the code version that was evaluated on the 1,200-episode test set, with a render guard for black / noisy frames and a wrist-depth `aim` step for grasping. See [RoboCasa](#robocasa).
 - [2026/10] 🔥 Spotter supports **RoboTwin 2.0** with π0.5: one-command evaluation (`bash robotwin_eval.sh`), a 1-shot example bank ([fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)), and full logs on ModelScope with every episode's frames, judge prompts and replies ([150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150): policy alone, Spotter and a VLM-led agent, each with Qwen and GPT; [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)). The real-robot demo (Franka Research 3) and the [project page](https://zqc3117.github.io/Spotter/) are online. See [RoboTwin 2.0](#robotwin-20).
 - [2026/09] 🎉 The paper is on [arXiv](https://arxiv.org/abs/2609.36808), and the code is released with the RoboCasa example bank ([fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)).
@@ -95,7 +96,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 - [Environment Setup](#-environment-setup)
 - [Model Preparation](#-model-preparation)
 - [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
-- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
+- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20) · [RoboDojo](#robodojo)
 - [Reproducing the Paper](#-reproducing-the-paper)
 - [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
@@ -108,6 +109,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 Spotter/
 ├── spotter.sh                        # one entry point: serve Qwen / the policy, run episodes, summarize
 ├── robotwin_eval.sh                  # one-command RoboTwin 2.0 evaluation (servers + Spotter arm + control + summary)
+├── robodojo_eval.sh                  # RoboDojo lanes with the settings of the released 540-episode run
 ├── recovery_explore/                 # Spotter itself
 │   ├── judge_driver_v7.sh            # supervision loop for one lane: screen -> judge -> repair -> verify
 │   ├── env_service.py                # RoboCasa simulation service (RPC), started by launch_svc.sh
@@ -369,6 +371,64 @@ turn and calls the policy as a tool; its code is not part of this release.
 
 The complete records of all five arms, with every episode's frames, prompts and replies, are on ModelScope:
 [150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
+
+### RoboDojo
+
+VPP2 as the embodied policy, Qwen3.8-27B as the screener, GPT-6.1-sol (reasoning effort xhigh, through the codex CLI)
+as the judge. 54 tasks × 10 episodes (seed 0), each run with the policy alone (control) and with Spotter.
+
+| RoboDojo, 540 episodes | VPP2 alone | VPP2 + Spotter |
+|---|---|---|
+| Generalization (24 tasks) | 43.23 / 35.8% | 43.81 / 37.5% |
+| Precision (8) | 42.00 / 35.0% | 46.00 / 40.0% |
+| Long-Horizon (8) | 60.12 / 41.2% | 62.50 / 42.5% |
+| Memory (6) | 50.25 / 50.0% | 53.67 / 53.3% |
+| Open (8) | 2.87 / 2.5% | 12.37 / 11.2% |
+| **Avg. (w/o Open)** | 48.90 / 40.52% | **51.49 / 43.33%** |
+| All 54 tasks | 40.35 / 33.1% | **43.34 / 36.5%** |
+
+Score (`episode_score` × 100) / success rate. Avg. (w/o Open) is the equal-weight mean of the four dimensions, as on
+the RoboDojo Agent leaderboard. Spotter intervened in 319 episodes, 29 of which succeeded. Per-episode results:
+[`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv). Our VPP2 setup is consistent with
+the official leaderboard: run alone under the official evaluation settings (official step budget, native episode counts,
+2,100 episodes) it scores 39.20 / 31.92%, against 39.26 / 32.26% for VPP2 on the RoboDojo leaderboard.
+
+**Step budget and episode settings.** Both arms get the same budget: each task's official step limit (`step_lim` in
+RoboDojo's task class) × 3, e.g. `general_pickup` 200 → 600 steps, `solve_equation` 300 → 900, `push_T_random`
+600 → 1800. Every action counts against it, including the judge's own repair actions. VPP2 runs 24-step chunks; the
+screener checks every window of 2 chunks (48 steps), and GPT-6.1-sol is called when the screener flags a window (and
+at least every 3 windows, and for 2 windows after an intervention). At most 4 interventions per episode, no resets or
+rewinds, 1 seed. The judge's instruction includes per-task acceptance notes (`recovery_explore/rd_task_notes.json`), and
+the repair tools use the head and wrist depth images.
+
+**How to run.**
+
+1. Install [RoboDojo](https://github.com/RoboDojo-Benchmark/RoboDojo) (Isaac Sim 5.1 build) and set `ROBODOJO_ENVSH`,
+   `ROBODOJO_REPO` and `ROBODOJO_PYTHON` in `env/env.sh` (see `env/env.sh.example`).
+2. Start the Qwen screener: `bash spotter.sh judge --gpus 0,1`.
+3. Start VPP2 policy servers from the RoboDojo checkout (XPolicyLab, VPP2 environment), one port each, and point
+   `POLICY_HOST` at that machine. The settings below are the ones used for the table:
+
+```bash
+cd $ROBODOJO_REPO      # one server per port; checkpoint joint2b_s100000 (action.pt + dataset_stats.json) and Wan2.1-I2V-14B-480P
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD:$PWD/XPolicyLab python XPolicyLab/setup_policy_server.py \
+  --config_path XPolicyLab/policy/VPP2/deploy.yml --overrides port=23000 host=0.0.0.0 \
+  checkpoint_path=<VPP2>/action.pt dataset_stats_path=<VPP2>/dataset_stats.json wan_model_dir=<Wan2.1-I2V-14B-480P> \
+  sigma_shift=1.0 num_inference_steps=10 seed=1 ckpt_name=joint2b_s100000 action_horizon=32 replan_steps=24
+```
+
+4. Sign in the `codex` CLI (the judge runs `codex exec` with `gpt-6.1-sol`).
+5. Run one lane per simulator (`LANE:GPU:POLICYPORT`; the last argument is `both`, `treat` or `ctrl`):
+
+```bash
+bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt \
+  "50:0:23000 51:1:23001 52:2:23002 53:3:23000" both
+bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt "50:0:23000" both --dry-run   # print only
+```
+
+Results go to `recovery_explore/runs_rd540_robodojo/results.jsonl`; rerunning the same name resumes. The defaults of
+`robodojo_eval.sh` are the settings of the run above; `SBS=1.0 RD_TASK_NOTES=0` switches to the official step budget
+and the plain instruction.
 
 ### Run options
 

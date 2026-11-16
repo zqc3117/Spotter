@@ -68,6 +68,68 @@ Answer in EXACTLY this format, risk first:
 RISK: <integer 0-10>
 WHY: <one short sentence>"""
 
+# RoboDojo (two ARX X5 arms, tabletop): the telemetry reports the MEASURED finger opening,
+# normalised 1 (open) .. about 0.19 where the fingers meet (probe 2026-10-20). The Franka
+# millimetre calibration above does not apply, so this family gets its own block.
+if _os.environ.get("FAMILY_OVERRIDE") == "robodojo":
+    CALIB = """HOW TO READ THE GRIPPER OPENING (two ARX X5 arms, measured finger position):
+  0.9-1.0    open, holding NOTHING
+  0.21-0.9   closed onto something: usually a grasp (thin objects read just above 0.2),
+             or fingers resting on an edge they cannot hold
+  <= 0.20    the fingers met: shut all the way with NOTHING between them.
+             This is positive proof of an EMPTY grasp.
+Each row gives the left and right opening; one hand usually does the work while the
+other rests open. A hand at <= 0.20 travelling toward the destination carries nothing."""
+    RUBRIC = RUBRIC.replace("aperture under 12 mm after a close\n        command", "an opening at or below 0.20 after a close\n        command")
+    SYS = f"""You are the cheap first-pass screener for a two-arm robot doing a tabletop
+manipulation task. An expert judge re-examines every window you flag, so a
+false alarm costs one extra review while a miss loses the whole episode.
+
+{CALIB}
+
+{RUBRIC}
+
+Answer in EXACTLY this format, risk first:
+RISK: <integer 0-10>
+WHY: <one short sentence>"""
+
+
+# rdv8 (SCREEN_PROMPT=v1): rdv7's verdict meaning -- the screener must flag whenever the task is not visibly
+# getting closer to done. Offline replay on dev windows: recall on GPT-intervene windows 60% -> 90%.
+if _os.environ.get("FAMILY_OVERRIDE") == "robodojo" and _os.environ.get("SCREEN_PROMPT") == "v1":
+    SYS = f"""You are the first-pass screener for a two-arm robot doing a tabletop manipulation task. An expert judge
+looks at every window you flag and can repair the task; a window you pass is never looked at. A false alarm costs
+one extra review; a miss can lose the episode. Flag whenever the task is not visibly getting closer to done.
+
+{CALIB}
+
+Movement is NOT progress. Large arm travel with open grippers often means the policy is wandering, withdrawing
+early, or repeating an attempt. Judge progress from the IMAGE against the TASK INSTRUCTION, step by step:
+  - Which objects has the task already put in the right place, in the right order/orientation? Which not yet?
+  - Is an object on the wrong destination, in the wrong order, the wrong object picked, or the wrong basket/pad?
+  - Was something dropped, knocked over, left outside its destination, or released before it arrived?
+  - Are the hands withdrawing or resting while part of the task is still undone?
+  - Has the same attempt been repeated (grasps closing on nothing, hand returning to the same spot)?
+  - If the judge acted recently, did what it expected actually happen?
+  - Is the remaining budget small for what is left?
+
+SCORE (risk) -- use the whole range:
+  9-10  proof of failure: a wrong placement/order/destination visible in the image; an object dropped or left
+        outside its target; fingers shut on nothing (opening <= 0.20) after a close; the judge's expectation
+        visibly did not hold.
+  6-8   likely trouble: no visible task progress over this window; hands withdrawing or idle with the task
+        unfinished; repeated attempts; heading to the wrong object or place; unsure whether a step succeeded.
+  3-5   mild doubt.
+  0-2   clearly progressing: the image shows the next unfinished step being done correctly right now.
+
+Answer in EXACTLY this format, risk first:
+RISK: <integer 0-10>
+WHY: <one short sentence naming the task step you checked>"""
+try:
+    THRESHOLD = int(_os.environ.get("SCREEN_THRESHOLD") or THRESHOLD)
+except ValueError:
+    pass
+
 # ---- rule ----------------------------------------------------------------
 _ROW = re.compile(r"^\d+\s+\d+-\d+\s+.*?([\d.]+)\s*$", re.M)
 # cli/harness.py prints bracketed columns after width(mm) (hand xyz, wrist rpy), so the row's
@@ -112,16 +174,22 @@ def _mime(b: bytes) -> str:
     return "image/png" if b[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
 
 def score(image_bytes: bytes, telemetry_text: str, task: str,
-          prev_verdicts=None, timeout=60, retries=2, mime=None):
+          prev_verdicts=None, timeout=None, retries=2, mime=None):
+    timeout = timeout or (240 if _os.environ.get("SCREEN_THINK") == "1" else 60)
     """Query the model only; returns (risk, why, port, dt). risk=-1 means the reply could not be parsed."""
     hist = ""
     if prev_verdicts:
         hist = "\nPrevious windows (this episode): " + ", ".join(
             "CHECK" if v else "FINE" for v in prev_verdicts[-4:]) + "\n"
+    exp = _os.environ.get("SCREEN_EXPECT", "").strip()
+    if exp:
+        hist += f"\nThe judge acted {_os.environ.get('SCREEN_EXPECT_AGE', '?')} window(s) ago and expected: {exp}\n"
+    think = _os.environ.get("SCREEN_THINK") == "1"
     mime = mime or _mime(image_bytes)
     img = base64.b64encode(image_bytes).decode()
-    body = {"model": MODEL, "temperature": 0.0, "max_tokens": 120,
-            "chat_template_kwargs": {"enable_thinking": False},
+    body = {"model": MODEL, "temperature": 0.0, "max_tokens": 2500 if think else 120,
+            "chat_template_kwargs": ({"enable_thinking": True, "thinking_budget": int(_os.environ.get("SCREEN_THINK_BUDGET", "1500"))}
+                                     if think else {"enable_thinking": False}),
             "messages": [
                 {"role": "system", "content": SYS},
                 {"role": "user", "content": [
@@ -136,7 +204,8 @@ def score(image_bytes: bytes, telemetry_text: str, task: str,
                                          data=data, headers={"Content-Type": "application/json"})
             t0 = time.time()
             d = json.loads(urllib.request.urlopen(req, timeout=timeout).read())
-            txt = d["choices"][0]["message"]["content"]
+            txt = d["choices"][0]["message"]["content"] or ""
+            txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S)
             m = re.search(r"RISK:\s*(\d+)", txt)
             w = re.search(r"WHY:\s*(.+)", txt)
             return (int(m.group(1)) if m else -1, (w.group(1).strip() if w else txt.strip()[:160]),

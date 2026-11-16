@@ -146,6 +146,7 @@ if [ "$family" = robodojo ]; then
     --host "${SVC_HOST:-0.0.0.0}" --cuda-device "$cuda" --port "$port" --port-tries 1 --step-budget-scale "$STEP_BUDGET_SCALE" \
     --robodojo-root "$RD_ROOT" ${ROBODOJO_ACTION_TYPE:+--action-type "$ROBODOJO_ACTION_TYPE"} \
     ${ROBODOJO_ENV_CFG:+--env-cfg-type "$ROBODOJO_ENV_CFG"} ${ROBODOJO_LAYOUT_SEED:+--layout-seed "$ROBODOJO_LAYOUT_SEED"} \
+    ${ROBODOJO_POLICY_NAME:+--policy-name "$ROBODOJO_POLICY_NAME"} ${ROBODOJO_POLICY_CHUNK:+--policy-chunk "$ROBODOJO_POLICY_CHUNK"} \
     --policy-family "${ROBODOJO_POLICY_FAMILY:-pi05}" --policy-endpoint "$policy_url"
 fi
 

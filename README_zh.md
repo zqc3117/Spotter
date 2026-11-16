@@ -30,6 +30,7 @@
 
 ## 📰 最新动态
 
+- [2026/11] 🔥 Spotter 新增支持 **RoboDojo**：具身策略用 VPP2，判别器用 GPT-6.1-sol。在 540 集（54 个任务 × 10 集）上得分 43.34，仅 VPP2 为 40.35（不含 Open 的平均：51.49 对 48.90），步数预算为官方的 3 倍。见 [RoboDojo](#robodojo)。
 - [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
 - [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
 - [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
@@ -89,7 +90,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [环境配置](#-环境配置)
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
-- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
+- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20) · [RoboDojo](#robodojo)
 - [复现论文结果](#-复现论文结果)
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
@@ -102,6 +103,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 Spotter/
 ├── spotter.sh                        # 统一入口：部署 Qwen / 策略服务、运行、汇总结果
 ├── robotwin_eval.sh                  # RoboTwin 2.0 一键评测（起服务 + Spotter 组 + 对照组 + 汇总）
+├── robodojo_eval.sh                  # RoboDojo 评测 lane，默认即发布的 540 集结果所用设置
 ├── recovery_explore/                 # Spotter 本体
 │   ├── judge_driver_v7.sh            # 单个 lane 的监督循环：筛查 -> 判别 -> 修复 -> 验证
 │   ├── env_service.py                # RoboCasa 仿真服务（RPC），由 launch_svc.sh 启动
@@ -357,6 +359,60 @@ bash spotter.sh summary
 
 五个组的完整记录（每集的画面、提示词和回复）都在 ModelScope 上：
 [150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)。
+
+### RoboDojo
+
+具身策略用 VPP2，筛子用 Qwen3.8-27B，判别器用 GPT-6.1-sol（推理强度 xhigh，通过 codex CLI 调用）。54 个任务 × 10 集
+（seed 0），每集分别跑仅策略（对照）和加 Spotter 两组。
+
+| RoboDojo，540 集 | 仅 VPP2 | VPP2 + Spotter |
+|---|---|---|
+| Generalization（24 个任务） | 43.23 / 35.8% | 43.81 / 37.5% |
+| Precision（8） | 42.00 / 35.0% | 46.00 / 40.0% |
+| Long-Horizon（8） | 60.12 / 41.2% | 62.50 / 42.5% |
+| Memory（6） | 50.25 / 50.0% | 53.67 / 53.3% |
+| Open（8） | 2.87 / 2.5% | 12.37 / 11.2% |
+| **Avg.（不含 Open）** | 48.90 / 40.52% | **51.49 / 43.33%** |
+| 全部 54 个任务 | 40.35 / 33.1% | **43.34 / 36.5%** |
+
+得分（`episode_score` × 100）/ 成功率。Avg.（不含 Open）为四个维度的等权平均，与 RoboDojo Agent 榜单算法一致。Spotter
+介入 319 集，其中成功 29 集。逐集结果见 [`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv)。
+我们的 VPP2 设置与官方榜单一致：在官方评测设置下单独运行 VPP2（官方步数预算、按官方集数，共 2,100 集），得分 39.20 / 31.92%，
+RoboDojo 榜单上 VPP2 为 39.26 / 32.26%。
+
+**步数预算与每集设置。** 两组步数预算相同：每个任务的官方步数上限（RoboDojo 任务类里的 `step_lim`）× 3，例如
+`general_pickup` 200 → 600 步，`solve_equation` 300 → 900，`push_T_random` 600 → 1800。所有动作都计入预算，包括判别器
+自己执行的修复动作。VPP2 每次输出 24 步的动作块；筛子每个窗口（2 个动作块，48 步）检查一次，筛子报警时调用
+GPT-6.1-sol（另外至少每 3 个窗口调用一次，介入后的 2 个窗口也会调用）。每集最多介入 4 次，不回档、不重置，只跑 1 个 seed。判别器的指令附有逐任务验收说明（`recovery_explore/rd_task_notes.json`），
+修复工具使用头部和腕部相机的深度图。
+
+**使用方法。**
+
+1. 安装 [RoboDojo](https://github.com/RoboDojo-Benchmark/RoboDojo)（Isaac Sim 5.1 版本），在 `env/env.sh` 里设置
+   `ROBODOJO_ENVSH`、`ROBODOJO_REPO`、`ROBODOJO_PYTHON`（参考 `env/env.sh.example`）。
+2. 启动 Qwen 筛子：`bash spotter.sh judge --gpus 0,1`。
+3. 在 RoboDojo 目录下（XPolicyLab，VPP2 的 Python 环境）启动 VPP2 策略服务，每个端口一个，并把 `POLICY_HOST` 设为
+   该机器地址。下面是上表所用的参数：
+
+```bash
+cd $ROBODOJO_REPO      # one server per port; checkpoint joint2b_s100000 (action.pt + dataset_stats.json) and Wan2.1-I2V-14B-480P
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD:$PWD/XPolicyLab python XPolicyLab/setup_policy_server.py \
+  --config_path XPolicyLab/policy/VPP2/deploy.yml --overrides port=23000 host=0.0.0.0 \
+  checkpoint_path=<VPP2>/action.pt dataset_stats_path=<VPP2>/dataset_stats.json wan_model_dir=<Wan2.1-I2V-14B-480P> \
+  sigma_shift=1.0 num_inference_steps=10 seed=1 ckpt_name=joint2b_s100000 action_horizon=32 replan_steps=24
+```
+
+4. 登录 `codex` CLI（判别器通过 `codex exec` 调用 `gpt-6.1-sol`）。
+5. 每个仿真开一条 lane（`LANE:GPU:POLICYPORT`；最后一个参数为 `both`、`treat` 或 `ctrl`）：
+
+```bash
+bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt \
+  "50:0:23000 51:1:23001 52:2:23002 53:3:23000" both
+bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt "50:0:23000" both --dry-run   # 只打印命令
+```
+
+结果写在 `recovery_explore/runs_rd540_robodojo/results.jsonl`，同名重跑会接着跑。`robodojo_eval.sh` 的默认值就是上表所用
+设置；设 `SBS=1.0 RD_TASK_NOTES=0` 即切换为官方步数预算和不加说明的指令。
 
 ### 运行选项
 

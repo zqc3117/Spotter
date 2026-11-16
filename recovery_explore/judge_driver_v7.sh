@@ -98,13 +98,21 @@ LEARN=${LEARN:-0}
 # Object instance split: A = instances seen in training, B = held out for generalization. harness has always defaulted to B,
 # while both policies' published baselines were measured on A -- without aligning, our numbers cannot be compared to theirs.
 SPLIT=${SPLIT:-B}
-INTERVENE_BUDGET=${INTERVENE_BUDGET:-8}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
+_IB=8; [ "$FAMILY" = robodojo ] && _IB=16
+INTERVENE_BUDGET=${INTERVENE_BUDGET:-$_IB}; MAX_INTERVENTIONS=${MAX_INTERVENTIONS:-8}
+# Window-prompt closing line: RoboDojo uses the staged-repair wording, the other families the original one.
+BAR_LINE="Keep the bar high: most
+windows should be ok."; [ "$FAMILY" = robodojo ] && BAR_LINE="Intervene only on clear failure
+evidence, following the stages in STAGED REPAIR."
+# RoboDojo (rdv5+): more retries on empty judge replies (its step allowance per intervention is 16, set above).
+if [ "$FAMILY" = robodojo ]; then EMPTY_TRIES=${EMPTY_TRIES:-8}; export QWEN_JSON_FIX=${QWEN_JSON_FIX:-1}; else EMPTY_TRIES=${EMPTY_TRIES:-3}; fi
 # Max plan segments per intervention (each segment = one execute_plan + one model call).
 # 3 segments * 8 steps is enough for "open -> back to the miss point -> descend -> close -> lift and verify" plus one correction.
 # RoboCasa (cosmos / pi05): 5 segments (its segments often stop at a checkpoint after 1-2 steps), the late-first-intervention
 # cut-off and per-camera images for Qwen's pointing. RoboTwin 2.0 / RoboDojo keep their released settings.
 if [ "$FAMILY" = robotwin ] || [ "$FAMILY" = robodojo ]; then
   PLAN_ROUNDS=${PLAN_ROUNDS:-3}; LATE_IV_FRAC=${LATE_IV_FRAC:-0}
+  [ "${RD_STEPWISE:-0}" = 1 ] && [ "$FAMILY" = robodojo ] && PLAN_ROUNDS=${RD_STEPWISE_ROUNDS:-8}   # rdv7: one step per turn
 else
   PLAN_ROUNDS=${PLAN_ROUNDS:-5}; LATE_IV_FRAC=${LATE_IV_FRAC:-45}; export QWEN_POINT_TILES=${QWEN_POINT_TILES:-1}
 fi
@@ -167,7 +175,7 @@ REUSE_CONTROL=${REUSE_CONTROL:-}
 # Startup self-check. Memory retrieval and quota checks run with 2>/dev/null, so a missing file just silently returns empty --
 # there were once several whole rounds with zero memory injection and nobody noticed. Exit right away if anything is missing.
 NEED_BRIEFS="BRIEF_PNP.md BRIEF_MECH.md"
-[ "$FAMILY" = robodojo ] && NEED_BRIEFS="$NEED_BRIEFS BRIEF_RD.md"
+[ "$FAMILY" = robodojo ] && NEED_BRIEFS="$NEED_BRIEFS BRIEF_RD.md JUDGE_BRIEF_V7_RD.md"
 [ "$FAMILY" = robotwin ] && NEED_BRIEFS="$NEED_BRIEFS BRIEF_RT.md"
 [ "$FAMILY" = robotwin ] && RESTAGE_REACH="goes back there in one planned path, however far"
 for f in cli/harness.py cli/rex.py cli/memory_select.py cli/quota_check.py cli/attempt_ledger.py \
@@ -530,12 +538,12 @@ PY
     # i.e. the whole trajectory goes unsupervised without anyone noticing (that is how luna's first run was wasted).
     local got; got=$(python3 -c "import json,sys;print(len((json.load(open(sys.argv[1])).get('result') or '').strip()))" "$2" 2>/dev/null || echo 0)
     if [ "${got:-0}" -lt 5 ] && codex_fallback_due; then sleep 2; continue; fi
-    if [ "${got:-0}" -lt 5 ] && [ $tries -lt 3 ]; then
+    if [ "${got:-0}" -lt 5 ] && [ $tries -lt ${EMPTY_TRIES:-8} ]; then
       # Drop the session before retrying. The most common cause of an empty result is a broken --resume itself
       # ("No deferred tool marker found in the resumed session"); retrying with the same
       # session id just fails the same way again, and three failures kill the whole lane.
       tries=$((tries+1)); SID=""
-      log "  judge returned empty, session dropped, retry $tries"; sleep 10; continue
+      log "  judge returned empty, session dropped, retry $tries"; [ $tries -le 3 ] && sleep 10 || sleep 120; continue  # rdv5: lane 52 of rdvg4 died on 3 transient empties
     fi
     # When the CLI returns an error object instead of a verdict, result is non-empty and passes the length check;
     # downstream cannot parse a verdict and defaults to ok -- the trajectory goes unsupervised while the scores look normal.
@@ -591,7 +599,7 @@ PYCAP
     if [ "${got:-0}" -lt 5 ]; then
       # Three empty results in a row: stop here. Defaulting to ok means the whole episode goes unsupervised while the results look normal.
       # That is what happened in the smoke test -- each turn was a single CLI error line, and all 15 windows were "judged ok".
-      log "  judge returned empty 3 times in a row, aborting the whole lane; raw output:"; head -c 400 "$2" | tee -a $OUT/lane$LANE/driver.log
+      log "  judge returned empty ${EMPTY_TRIES:-8} times in a row, aborting the whole lane; raw output:"; head -c 400 "$2" | tee -a $OUT/lane$LANE/driver.log
       exit 3
     fi
     if quota_blocked "$2" && [ $tries -lt $QUOTA_TRIES ]; then
@@ -671,6 +679,16 @@ and the image: did that expectation hold -- yes, no, or cannot tell yet -- and o
 evidence. Then answer ok. If it did not hold, say plainly what the repair failed to
 achieve; you get to act again in the window after this one, and that answer is what
 you will have to build on."
+    if [ "${RD_VERIFY_ACT:-0}" = 1 ] && [ "$FAMILY" = robodojo ]; then
+      IV_BLOCK="$head
+$exp
+THIS IS THE WINDOW RIGHT AFTER YOUR INTERVENTION. Open your diagnosis by answering, from the
+numbers and the image: did that expectation hold -- yes, no, or cannot tell yet -- and on what
+evidence (also put it in \"expect_held\"). If it held or you cannot tell yet, answer ok and let the
+policy carry on. If it clearly did not hold, you may act again in this window: change the
+category of the repair (another grasp point, the other arm, pi0_pick, a push, a place), not
+its offset."
+    fi
   else
     IV_BLOCK="$head
 $exp
@@ -735,7 +753,7 @@ Answer with ONE json object and nothing else (no prose around it, no code fence)
 
 {"verdict": "ok" | "intervene" | "giveup",
  "diagnosis": "one or two sentences on what you see",
- "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the kettle leaves the burner. Omit for ok and giveup.",
+ "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the block is off the table and stays between the fingers. Omit for ok and giveup.",
  "plan": []}
 
 - verdict "ok": the policy is coping. plan MUST be empty. Most windows are ok.
@@ -877,7 +895,7 @@ Answer with ONE json object and nothing else (no prose around it, no code fence)
 
 {"verdict": "ok" | "intervene" | "giveup",
  "diagnosis": "one or two sentences on what you see",
- "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the kettle leaves the burner. Omit for ok and giveup.",
+ "expect": "when verdict is intervene: one sentence naming the observable you expect in the NEXT window if this repair worked -- a number or a visible fact, not a hope. Example: gripper width stays above 20 mm while the arm lifts, or the block is off the table and stays between the fingers. Omit for ok and giveup.",
  "plan": []}
 
 - verdict "ok": the policy is coping. plan MUST be empty. Most windows are ok.
@@ -979,21 +997,25 @@ if [ "$FAMILY" = robodojo ] || [ "$FAMILY" = robotwin ]; then
   #   2. retreat's pre_grasp anchor: relies on "the approach point before the last empty closure", a state machine RoboCasa
   #      wrote around finger separation in millimetres; this robot has no finger separation.
   #   3. Wrist contact-force abort: this robot has no force sensor.
-  PLAN_SPEC=$(printf '%s' "$PLAN_SPEC" | awk '
+  PLAN_SPEC=$(printf '%s' "$PLAN_SPEC" | awk -v fam="$FAMILY" -v depth="${RD_DEPTH:-0}" '
     BEGIN { RS = ""; ORS = "\n\n" }
     /A pixel target is unprojected/ { next }
     /retreat with "to": "pre_grasp"/ { next }
     {
       # The trailing \n? is required: in paragraph mode the last line has no newline, and the pre_grasp entry
       # happens to be the last line of the primitive list. With a hard-coded \n it always stayed in the list.
-      gsub(/[ ]*\{"op": "move_to", "target": \{"pixel"[^\n]*\n?/, "")
+      if (depth != "1") gsub(/[ ]*\{"op": "move_to", "target": \{"pixel"[^\n]*\n?/, "")
       gsub(/[ ]*\{"op": "retreat", "to": "pre_grasp"\}\n?/, "")
       # In the original this sentence wraps as "wrist contact force\nspikes,"; a single-line pattern never matches.
       gsub(/wrist contact force\nspikes, /, "")
       # On this robot an empty grasp is judged by the normalised opening, not finger separation in millimetres.
-      gsub(/\(width under 12 mm\)/, "(the opening comes back at or below 0.05)")
+      gsub(/\(width under 12 mm\)/, (fam == "robodojo" ? "(the opening comes back at or below 0.20)" : "(the opening comes back at or below 0.05)"))
       print
     }')
+  if [ "$FAMILY" = robodojo ] && { [ "${RD_PERSIST:-0}" = 1 ] || [ "${RD_STAGED:-0}" = 1 ]; }; then
+    # rdv7: "ok" = visible progress; stuck = intervene; no false plan-gate paragraph (gates are off here)
+    PLAN_SPEC=$(printf '%s' "$PLAN_SPEC" | python3 "$P/recovery_explore/rd_verdicts.py")
+  fi
   if [ "$FAMILY" = robotwin ]; then
   # robotwin only: the shared "Three rules" paragraph talks about pick-and-place /
   # microwave / stove; the robotwin gate rules are restated (with examples) below.
@@ -1187,37 +1209,199 @@ THIS ROBOT IS BIMANUAL (two ARX X5 arms). Every step except "policy" takes an
 other arm holds its joints exactly where they are. The "state" block lists
 left_ee_pose and right_ee_pose as [x, y, z, qw, qx, qy, qz] in the world frame.
 There is no wrist force sensor on this robot, so execution never stops for
-contact; and the gripper reports a normalised opening from 0 (shut) to 1
-(open), not a width in millimetres -- "closed on nothing" means the opening
-came back at or below 0.05 after a close.
+contact; the gripper reports the measured finger opening, normalised from 1
+(open) down to about 0.19 where the fingers meet -- so "closed on nothing" means
+the opening came back at or below 0.20 after a close, and a close that stops
+higher is resting on something (lift and look to see whether it is held).
 Cartesian moves are solved by inverse kinematics from the current arm
-configuration: a target the IK cannot reach stops the plan with servo_missed,
-exactly like a missed servo, and disables further Cartesian steps for this
-intervention.
+configuration: a target the IK cannot reach stops that plan with servo_missed;
+the next plan may try a different target.
 
-HOW TO AIM ON THIS ROBOT. There is no pixel targeting here: this benchmark's
-cameras deliver colour only, so the simulator cannot turn a pixel into a 3D
-point. You aim two ways instead, and the first is almost always the right one:
+HOW TO AIM AND GRASP ON THIS ROBOT. The cameras are RGB-D, so a point you pick
+in a picture becomes a 3-D target. Pixel coordinates are [row, col] from 0 to
+1000 within ONE camera picture (primary = head, secondary = left wrist, wrist =
+right wrist), the way you normally point at things in an image.
 
-  * RELATIVE, with nudge and lift. "The hand is 3 cm short and 2 cm to the left
-    of the object" becomes {"op": "nudge", "dxyz": [0.02, 0.03, 0.0]}. This
-    keeps the wrist orientation the policy chose and only corrects the offset,
-    so the hand stays in a pose the policy can carry on from. Read the offset
-    off the pictures: you are given the head view and both wrist views, and the
-    wrist view of the working hand shows what that hand is about to touch.
-  * ABSOLUTE, with move_to and an explicit {"xyz": [x, y, z]} in world metres.
-    Both hands' world positions are printed in the telemetry every window, so
-    you can compute a target relative to where a hand already is. Use this to
-    go back somewhere the arm has been, not to reach somewhere new: an absolute
-    move to a pose the policy has never seen is what a hand-back cannot recover
-    from.
+  * POINT AND MOVE: {"op": "move_to", "target": {"pixel": [row, col], "camera":
+    "primary", "dz": 0.05}} puts the fingertips dz metres above the surface
+    point you picked, wrist orientation kept. {"op": "nudge", "dxyz": [...]} and
+    {"op": "lift", "dz": ...} remain for small relative corrections, and
+    {"op": "move_to", "target": {"xyz": [x, y, z]}} for world coordinates.
+    Every move executes its whole route.
+  * GRASP: {"op": "grasp", "arm": "left" | "right", "target": {"pixel": [row,
+    col], "camera": "primary"}} -- the robot finds the object at that point in
+    the depth images, turns the gripper fingers-down, closes across the
+    object's short side, lifts it 6 cm and reports "outcome": held, slipped,
+    closed_empty, no_object, too_wide (more than 8 cm across), or unreachable,
+    with the object's measured width/length/top height. Without a target it
+    grasps whatever is under that hand's fingertips. After "held", hand back
+    with {"op": "policy", "chunks": 2} so the policy carries on from a secured
+    object, or carry it yourself with move_to.
 
-A single move is capped at 5 cm unless the target is a point this arm has
-already occupied, so plan a long correction as two or three steps, and expect
-the reply to tell you how far it actually got.
+  * REACH_CHECK: {"op": "reach_check", "target": {"pixel": [row, col], "camera":
+    "primary"}} -- no motion and no step cost: reports which arm can reach that
+    point ("reachable_by": left / right / none, how far past each arm's reach,
+    whether the scripted IK finds a fingers-down pose). Any op that takes "arm" also
+    accepts "arm": "auto" (the arm that reaches the target); an explicit arm is
+    never swapped. Every scripted op with a target reports "reach" for it.
+    "unreachable_both" means neither arm's scripted motion reaches the object or
+    the destination: do not retry it with the other arm -- hand the step back to
+    the policy (the learned policy reaches poses the scripted IK cannot), or first
+    bring the object closer with a push or a hand-to-hand handover that IS
+    reachable. NUDGE takes "dxyz": [dx, dy, dz] in metres.
+  * PI0_PICK: {"op": "pi0_pick", "chunks": 8} -- runs the learned policy (it sees
+    the full task instruction) and STOPS THE MOMENT a hand has picked something up
+    (went down, closed on an object, came back up), so the policy's next moves
+    cannot drop it ("outcome": grasped / no_grasp). The policy is good at the
+    grasp itself; use pi0_pick for grasps it can do, the scripted grasp for the
+    rest, then carry with place / move_to yourself.
+  * PLACE: {"op": "place", "arm": ..., "target": {"pixel": [row, col], "camera":
+    "primary"}} -- carries the object in that hand to the surface point you
+    picked (table, plate, shelf, inside a box or bin), lowers it to just above
+    that surface, opens the fingers and lifts 8 cm ("outcome": released).
+  * PICK_PLACE: {"op": "pick_place", "arm": ..., "target": {"pixel": ...},
+    "destination": {"pixel": ...}} -- a grasp followed by a place in one step
+    ("outcome": placed, or the grasp outcome if the grasp itself failed).
+  * PRESS: {"op": "press", "arm": ..., "target": {"pixel": ...}} -- closed
+    fingers straight down onto that point (a button, a key, a switch) and back up.
+  * PUSH: {"op": "push", "arm": ..., "target": {"pixel": ...}, "to": {"pixel":
+    ...}} -- slides the object at target along the table to the "to" point
+    (or use "direction": [dx, dy] with "distance" in metres).
+
+When a grasp is the right repair: the policy has closed on nothing near the
+same object twice, or keeps hovering over it without closing; the object is up
+to 8 cm across and sits on a surface. Not for cloth, liquids, objects inside a
+container or held by the other hand -- for those, re-stage with small moves
+and hand back. If a grasp reports unreachable, pick a point nearer the robot
+or use the other arm; if slipped or closed_empty, try once more at a point
+nearer the object's middle before handing back.
+
+HAND-BACK: when your plan hands back to the policy, the simulator first returns every empty hand to the
+pose it had at the start of the episode (fingers open) -- the policy restarts best from there. So hand back
+only at a clean point: after a whole step is finished (object placed where it belongs), not with an object
+half-moved. A hand that is still holding something stays where it is.
+
+REPAIR BY WHAT WENT WRONG (tendencies, not rules). A repair that only nudges the
+hand and hands back usually meets the same policy that just failed. On this robot
+a policy that has failed at one step of a task usually fails the following steps
+too: when your tools can do the remaining steps (pick_place each remaining object
+to where the task wants it, press, push), do ALL of them in this plan, in task
+order, and hand back only for what the tools cannot do. Per failure type:
+  * the policy stalls or oscillates while holding an object -> place it where
+    this step of the task wants it, then hand back;
+  * it stalls or oscillates before picking the next object -> pick_place that
+    object to where it belongs, then hand back;
+  * a handover between the hands keeps failing -> do the transfer with one arm
+    (pick_place straight to the destination);
+  * the task needs a press, push or sweep that is not happening -> press / push;
+  * an object went to the wrong place -> pick_place it to the right one.
+
+WHAT EARLIER RUNS ON THIS ROBOT SHOWED (tendencies, not rules -- use your judgment):
+  * After the working hand has closed on nothing near the same object twice, a
+    grasp aimed at the middle of that object in the head picture held it about a
+    third of the time; another plain hand-back usually repeated the miss.
+  * "giveup" ends your help for the rest of the episode; use it only when nothing can
+    be done with the steps and tools left.
+  * Your answer is read by a program: reply with the JSON object only.
+  * A first miss is often retried successfully by the policy; let it try once
+    (stage 1) before you take a step over yourself (stage 2).
+  * Aim a grasp at the centre of ONE small object (under about 8 cm across) as
+    it appears in the head picture -- not at a pile, a container, a plate or a
+    large item. If the report says too_wide or no_object, choose a different,
+    smaller object point instead of repeating the same one.
 RDSPEC
 )
   fi
+  if [ "${RD_PROMPT_DISCIPLINE:-0}" = 1 ]; then RD_ADDENDUM="$RD_ADDENDUM
+$(cat << 'DISCIPLINE'
+
+WORKING RULES FOR REPAIRS (apply them in every plan):
+- Never send the same repair twice. If a step did not work, change something real: another approach
+  height or yaw, another grasp point, the other arm, pi0_pick instead of a scripted grasp, or a push
+  instead of a pick. Re-sending an action that just failed wastes the steps you need to finish.
+- A step rejected before it moved (unreachable, IK failure, zero steps executed) is not fixed by more
+  steps or a smaller offset: choose a target the arm can reach, the other arm, or bring the object closer.
+- A closed gripper is not a grasp, and an object centred in the wrist picture is not a grasp either --
+  that camera moves with the hand. A grasp is confirmed only when, after the lift, the object has left
+  the surface it stood on (head camera) and the opening stayed above the empty value. After a manual
+  close the reply includes "verify": held_by_width / partial / slipped / closed_empty; treat partial
+  and held_by_width as unconfirmed until the picture shows the object off its support.
+- After an empty or slipped grasp, the next attempt must differ (see the first rule).
+- Before you hand back after a placement, check in the pictures that the object is at the destination,
+  in the orientation the task needs, and resting on its support -- not still in the hand or tipped over.
+- Hand back only at a clean point; at hand-back an empty hand is returned to its start pose automatically.
+  retreat goes to the pose the hand had when you took over; it keeps a held object in the hand (add
+  "release": true to let go there).
+- If a target lands on the robot's own hand or arm, the grasp snaps to the nearest object off the robot
+  and reports how far it moved ("snapped_from_robot_m"); check that it is the object you meant.
+DISCIPLINE
+)"; fi
+  if [ "${RD_HONEST:-0}" = 1 ]; then RD_ADDENDUM="$RD_ADDENDUM
+$(cat << 'HONEST'
+
+WHAT THE STEP OUTCOMES MEAN IN THIS RUN (measured from the arm and the depth cameras, never assumed):
+- grasp: held (opening stayed up and the depth cameras no longer see the object standing where it was, or
+  "verify" says it is unclear -- then check the picture); held_by_width_only (the fingers stopped on something
+  but the object still stands where it was: treat as a miss); closed_empty; slipped; descent_blocked (the
+  fingers could not get down to the grasp height, the gripper was NOT closed); no_object; too_wide; unreachable.
+- pick_place: placed_at_target (a new object is seen resting at the destination) or placed_unverified (check
+  the picture), else the grasp outcome. place: released_at_target / released_unverified.
+- push: pushed (the object moved, object_moved_m / moved_along_push_m), no_motion (it did not move),
+  push_blocked (the push motion stopped short). press: pressed (the fingertips reached the surface) or
+  press_short (stopped_above_surface_m). Moves: arrived or stopped_short_<reason>.
+Earlier runs reported "pushed", "pressed" and "placed" without checking; these outcomes now check.
+HONEST
+)"; fi
+  if [ "${RD_STAGED:-0}" = 1 ]; then RD_ADDENDUM="$RD_ADDENDUM
+
+STAGED REPAIR (how to use your interventions in this run):
+  Stage 1 -- the first clear failure on a sub-goal: do NOT act on the scene. Send an \"intervene\" plan that only
+    hands back to the policy ({\"op\": \"policy\"}), optionally preceded by one {\"op\": \"retreat\"} if the hand is
+    somewhere the policy cannot work from, and state in \"expect\" what you will see next window if the policy
+    carries the step itself. Many misses are retried successfully by the policy; let it try once.
+  Stage 2 -- that expectation failed after the hand-back: answer \"expect_held\": \"no\". From the next window the
+    policy is paused and you complete the WHOLE sub-goal yourself with ops that finish it -- pick_place to the
+    target, place, push to the target, press -- checking each result. Do not grasp something and hand it back
+    half-done; finish the step, verify it in the picture, then answer ok so the policy resumes.
+  Stage 3 -- the same op type failing twice (unreachable, no_grasp, descent_blocked, closed_empty, push_blocked):
+    switch once to a materially different method (other arm, other grasp point or approach, push instead of
+    pick, pick_place instead of grasp). If that also fails, hand the sub-goal back to the policy for good and do
+    not take it up again unless the scene clearly changes (a new sub-goal or a different state).
+  Outside these stages answer ok: a policy that is progressing, or about to retry, is not interrupted."; fi
+  if [ "${RD_RESTRAINT:-0}" = 1 ]; then RD_ADDENDUM="$RD_ADDENDUM
+
+RESTRAINT (this run): the policy finishes many episodes on its own, and stepping into an episode it would have
+finished usually costs more than it gains. So:
+  - Before window 6 answer ok unless something irreversible happened: an object fell off the table or out of
+    reach of both arms, an object the task needs was knocked over, or an arm is jammed.
+  - From window 6 on, intervene only when the policy is clearly NOT recovering: the same sub-goal has failed in
+    at least two attempts, or nothing relevant changed over three consecutive windows.
+  - A single miss, slow progress, or an unusual approach is not a reason to intervene -- answer ok.
+  - When you do intervene, fix only the sub-goal that blocks the policy, then hand back; do not go on to later
+    sub-goals yourself.
+  - When in doubt, answer ok."; fi
+  if [ "${RD_STEPWISE:-0}" = 1 ]; then RD_ADDENDUM="$RD_ADDENDUM
+$(cat << 'STEPWISE'
+
+STEPWISE INTERVENTIONS IN THIS RUN: when you intervene, only the FIRST step of your plan is executed. You then
+get its outcome and a fresh three-camera picture and choose the next step (or answer fixed to hand back), up to
+8 step turns per intervention. Write the full plan you intend anyway -- the rest is shown back to you -- but
+expect to adapt it after every step.
+STEPWISE
+)"; fi
+  if [ "${RD_LEAD:-0}" = 1 ]; then RD_ADDENDUM="$(cat << 'LEAD'
+
+YOU ARE THE PRIMARY CONTROLLER IN THIS RUN. On this benchmark the learned policy alone
+finishes a task in well under one episode in ten: it often grasps well but then stalls,
+oscillates or drops things on the way. So do not wait for it to fail. Work the task
+step by step yourself: for each object, get it into a hand (pi0_pick, or grasp), carry it
+to where the task wants it (place), check the result in the next pictures, and go on to
+the next object. Hand back to the policy ({"op": "policy"}) only for motions your tools
+cannot do (pouring, sweeping, inserting, folding cloth). An "ok" verdict lets the policy
+run one more window on its own; intervene whenever there is a step you can do.
+LEAD
+)
+$RD_ADDENDUM"; fi
   PLAN_SPEC="$PLAN_SPEC
 $RD_ADDENDUM"
 fi
@@ -1239,6 +1423,11 @@ you have already moved stays moved. When a repair has failed once, the honest en
 is retreat, then fixed with an empty plan: the policy gets its own pose back and all
 the steps it has left. Two attempts from one takeover is the limit; a third small
 correction from wherever the hand now is, is how interventions run an episode out.'
+  [ "$FAMILY" = robodojo ] && RESTAGE_TAIL='it is the only kind of retry that exists -- nothing rewinds the scene, and whatever
+you have already moved stays moved. When a repair fails, read its OUTCOME and the fresh
+image, then try a materially different approach -- another point, angle or height, the
+other arm, pi0_pick, a push -- rather than repeating the same op. If a second method also
+fails, hand the step back to the policy and leave it unless the scene changes.'
   BLOWUP_ACTION='Send one plan containing only {"op": "retreat"}. If that step also travels several
 times what it asked for, open the fingers and end the intervention as fixed with a
 note saying what happened.'
@@ -1252,15 +1441,36 @@ the re-approach the policy just made, and that intervention counts in full.'
 fi
 
 # Extract the single JSON object from the model's reply. The model occasionally adds a code fence or preamble; both are handled.
-extract_json(){ python3 - "$1" << 'JSONPY'
-import json, re, sys
+extract_json(){ CAM_EST_LOG="${CD:-}/estimates.jsonl" CAM_EST_EP="http://$SIM_HOST:$PORT" CAM_EST_CLI="$P/recovery_explore/cli" \
+  python3 - "$1" << 'JSONPY'
+import json, os, re, sys, time
 try: t = json.load(open(sys.argv[1])).get("result") or ""
 except Exception: t = ""
 m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", t, re.S) or re.search(r"(\{.*\})", t, re.S)
-if not m:
-    print("{}"); raise SystemExit
-try: print(json.dumps(json.loads(m.group(1)), ensure_ascii=False))
-except Exception: print("{}")
+d = None
+if m:
+    try: d = json.loads(m.group(1))
+    except Exception: d = None
+print(json.dumps(d, ensure_ascii=False) if isinstance(d, dict) else "{}")
+# RD_CAM_EST: log the judge's position estimates with ground truth (analysis only; nothing here reaches the judge)
+if os.environ.get("RD_CAM_EST", "0") == "1" and os.environ.get("CAM_EST_LOG", "/estimates.jsonl") != "/estimates.jsonl":
+    try:
+        d = d if isinstance(d, dict) else {}
+        if d.get("plan") or "estimates" in d:
+            est = d.get("estimates")
+            rec = {"file": sys.argv[1], "time": time.time(), "has_plan": bool(d.get("plan")),
+                   "parse": "ok" if isinstance(est, list) and est else ("missing" if est is None else "bad"), "estimates": est}
+            if rec["parse"] == "ok":
+                sys.path.insert(0, os.environ["CAM_EST_CLI"]); import rex
+                rec["truth"] = rex.call(os.environ["CAM_EST_EP"], "debug_estimate_truth", estimates=est, timeout=120)
+            with open(os.environ["CAM_EST_LOG"], "a") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except BaseException as exc:
+        try:
+            with open(os.environ["CAM_EST_LOG"], "a") as fh:
+                fh.write(json.dumps({"file": sys.argv[1], "parse": "log_error", "error": repr(exc)}) + "\n")
+        except Exception:
+            pass
 JSONPY
 }
 jfield(){ python3 -c "
@@ -1301,6 +1511,14 @@ while true; do
   fi
   [ "$(echo "$BEG" | jget ok)" != "True" ] && { log "  episode-begin failed, skipping: $(echo "$BEG" | head -c 200)"; continue; }
   INSTR=$(echo "$BEG" | jget instruction); TOTC=$(echo "$BEG" | jget total_chunks)
+  # rdv7 (RD_TASK_NOTES): the benchmark task's acceptance notes (what "done" means beyond the one-line instruction),
+  # paraphrased from uni-robot-agent's instruction supplements (MIT). Text only -- nothing from the simulator.
+  if [ "${RD_TASK_NOTES:-0}" = 1 ] && [ "$FAMILY" = robodojo ]; then
+    TNOTE=$(python3 -c "import json,sys
+try: print(json.load(open(sys.argv[1]))['notes'].get(sys.argv[2], ''))
+except Exception: print('')" "$P/recovery_explore/rd_task_notes.json" "$TASK" 2>/dev/null)
+    [ -n "$TNOTE" ] && INSTR="$INSTR [Acceptance notes for this task (from the benchmark's task description, not the simulator): $TNOTE]"
+  fi
   MAXSTEPS=$(echo "$BEG" | jget max_steps); case "$MAXSTEPS" in ""|None) MAXSTEPS=0;; esac
   # The first-intervention gate keeps measuring progress against the scaled (x1.8) cap even when STEP_TOTAL lifts the
   # episode cap, so up to that cap the judge behaves exactly as in a scaled run (2026-10-02, user: Spotter-H at 3000 steps).
@@ -1373,10 +1591,16 @@ PY
   # (episode-begin refuses to build a second episode in a process that already holds an env), the treatment arm kept advancing
   # on the control arm's finished env, producing garbage that looked fine.
   BEG2=$($H episode-begin --task "$TASK" --seed "$SEED" --episode-index "$EP" --obj-instance-split "$SPLIT" 2>&1 | tail -1)
+  for _try in 1 2; do                   # rdv5: transient CUDA-graph capture failures clear on a fresh service
+    [ "$(echo "$BEG2" | jget ok)" = "True" ] && break
+    log "  treatment-arm episode-begin failed ($(echo "$BEG2" | cut -c1-120)), restarting service, retry $_try"
+    restart_svc && BEG2=$($H episode-begin --task "$TASK" --seed "$SEED" --episode-index "$EP" --obj-instance-split "$SPLIT" 2>&1 | tail -1)
+  done
   [ "$(echo "$BEG2" | jget ok)" != "True" ] && { log "  treatment-arm episode-begin failed, skipping: $(echo "$BEG2" | cut -c1-200)"; continue; }
   TREAT_T0=$(date +%s)
   SID=""; W=0; NINT=0; JUDGED=0; EVENTS="[]"; TS=False; GAVEUP=0; BADADV=0; GIVEUP_PUSHED=0; EVER_CLOSED=0; NREFUND=0; FIRSTMISS_W=""; NEARLY=0; PREV_NGW=0; MISS_W=-99; NGW=0; CODEX_ALT=0; ALT_REBRIEF=0
-  IV_LAST_W=""; IV_MEMO=""; IV_EXPECT=""; VERIFY_PENDING=0; NVERIFY=0
+  IV_LAST_W=""; IV_MEMO=""; IV_EXPECT=""; VERIFY_PENDING=0; NVERIFY=0; LAST_GPT_W=0
+  ESC_ACTIVE=0; ESC_N=0; ESC_WHY=""; NESC=0; ESC_WINS=0; LAST_MONT=""; LAST_TELF=""
   # Screener bookkeeping: how many windows were passed, which ones (the judge must be told about the gap), and flag history.
   SCREENED=0; SKIPPED=""; SKIPINFO=""; SFLAGS=""; OPUS_CALLED=0; PREV_IV_SHAPE=""; PREV_IV_NGRASP=""; REPEAT_PUSHED=0
   NCOMPACT=0; COMPACT_NEXT=0; COMPACTED_W=0; COMPACT_PENDING=0
@@ -1412,9 +1636,12 @@ PYA
         done
       fi
     else
-    ADV=$(timeout ${ADV_DEADLINE:-600} $H advance --num-chunks $WINDOW --frames-dir "$CD/w$W" --truth-dir "$TD/w$W" --tag w 2>&1 | tail -1)
+    _NCH=$WINDOW
+    if [ "${ESC_ACTIVE:-0}" = 1 ]; then _NCH=0; log "  window $W escalated takeover ($((ESC_N+1))/${RD_ESCALATE_MAX_WINDOWS:-6}): policy paused, judge acts"; fi
+    ADV=$(timeout ${ADV_DEADLINE:-600} $H advance --num-chunks $_NCH --frames-dir "$CD/w$W" --truth-dir "$TD/w$W" --tag w 2>&1 | tail -1)
     fi
     MONT=$(echo "$ADV" | jget montage); DONE=$(echo "$ADV" | jget done)
+    if [ -z "$MONT" ] || [ "$MONT" = None ] || [ ! -f "$MONT" ]; then MONT="${LAST_MONT:-}"; fi; [ -n "$MONT" ] && LAST_MONT="$MONT"
     # When advance fails, committed_timestep is empty/None. DONE is not True either,
     # so the old driver kept looping and called the judge every window -- one lane in t1 spun idle for
     # 44 windows, burning 44 judge calls before anyone noticed. 2 in a row restarts the service; 2 more abandons the episode.
@@ -1428,6 +1655,7 @@ PYA
     fi
     BADADV=0
     TELF=$(echo "$ADV" | jget telemetry_file)
+    if [ -z "$TELF" ] || [ "$TELF" = None ] || [ ! -f "$TELF" ]; then TELF="${LAST_TELF:-$TELF}"; fi; [ -f "$TELF" ] && LAST_TELF="$TELF"
     if [ "$ASYNC" = 2 ] && [ -n "${ABATCH:-}" ]; then
       # windows run since the last check are shown together: stacked montages, the newest telemetry
       # (its table already carries their chunks)
@@ -1556,10 +1784,24 @@ l.append({'window':$W,'committed':int('${CT:-0}'),'judge':'gated'})
 print(json.dumps(l))")
       continue
     fi
+    # --- rdv8 gate: windows the screener may not skip (GPT is called without asking it) ---
+    FORCE_GPT=""
+    if [ "$SCREEN" = 1 ] && [ "${SCREEN_SHADOW:-0}" != 1 ] && [ "${ESC_ACTIVE:-0}" = 0 ]; then
+      if [ -n "${IV_LAST_W:-}" ] && [ $((W - IV_LAST_W)) -le "${SCREEN_AFTER_IV:-0}" ]; then FORCE_GPT="after_iv"
+      elif [ "${VERIFY_PENDING:-0}" = 1 ] && [ "${SCREEN_FORCE_VERIFY:-0}" = 1 ]; then FORCE_GPT="verify"
+      elif [ "${SCREEN_MAXGAP:-0}" -gt 0 ] && [ $((W - ${LAST_GPT_W:-0})) -ge "${SCREEN_MAXGAP:-0}" ]; then FORCE_GPT="maxgap"
+      fi
+      [ -n "$FORCE_GPT" ] && echo "{\"w\":$W,\"force\":\"$FORCE_GPT\"}" >> "$CD/screen_gate.jsonl"
+    fi
     # --- Tier 1: local screener ---
     # fail-closed lives in screen_window.py: an exception / no connection / empty reply all return flag=true.
     # Only the flag field counts here, and a missing one is treated as true -- a pass must be the screener's explicit answer, never a default.
-    if [ "$SCREEN" = 1 ] && [ -n "$TELF" ] && [ -n "$MONT" ]; then
+    if [ -n "$FORCE_GPT" ]; then log "  window $W screener skipped ($FORCE_GPT) -> calling $MODEL"; fi
+    if [ -z "$FORCE_GPT" ] && [ "$SCREEN" = 1 ] && [ -n "$TELF" ] && [ -n "$MONT" ] && [ "${ESC_ACTIVE:-0}" = 0 ]; then
+      SCREEN_EXPECT=""; SCREEN_EXPECT_AGE=""
+      if [ "$FAMILY" = robodojo ] && [ -n "${IV_LAST_W:-}" ] && [ -n "${IV_EXPECT:-}" ] && [ $((W - IV_LAST_W)) -le 3 ]; then
+        SCREEN_EXPECT="$IV_EXPECT"; SCREEN_EXPECT_AGE=$((W - IV_LAST_W)); fi
+      export SCREEN_EXPECT SCREEN_EXPECT_AGE
       # stderr goes to driver.log instead of being discarded -- that is where screener config errors used to be swallowed.
       # The screener's empty-closure rule applies to PnP* tasks only and reads this window's
       # chunks plus the one before; --task carries the instruction, so the task name and the
@@ -1595,6 +1837,11 @@ print(json.dumps(l))")
           SFLAG=pending
         fi
       fi
+      if [ "${SCREEN_SHADOW:-0}" = 1 ]; then
+        printf '{"window": %s, "shadow": "%s", "risk": "%s", "rule": "%s"}\n' "$W" "$SFLAG" "${SRISK:-}" "${SRULE:-}" >> "$CD/screen_shadow.jsonl"
+        log "  window $W screener (shadow) says $SFLAG (risk ${SRISK:-?}) -> calling $MODEL anyway"
+        SFLAG=true
+      fi
       if [ "$SFLAG" = "pending" ]; then
         SCREENED=$((SCREENED+1)); SKIPPED="${SKIPPED:+$SKIPPED,}$W"; SKIPINFO="${SKIPINFO:+$SKIPINFO; }$W (flagged once, risk ${SRISK:-?}, not confirmed)"
         log "  window $W screener flagged once (risk ${SRISK:-?}, rule ${SRULE:-?}), waiting for confirmation next window, not calling $MODEL"
@@ -1622,7 +1869,7 @@ print(json.dumps(l))")
     # windows unjudged once three interventions were used, so the whole late part of an episode
     # went unseen. MONITOR_AFTER_BUDGET=0 restores the old "stop calling it" behaviour.
     MONITOR=0
-    if [ "$GAVEUP" = 1 ] || [ "$NINT" -ge "$MAX_INTERVENTIONS" ]; then
+    if [ "$GAVEUP" = 1 ] || { [ "$NINT" -ge "$MAX_INTERVENTIONS" ] && [ "${ESC_ACTIVE:-0}" = 0 ]; }; then
       if [ "${MONITOR_AFTER_BUDGET:-1}" != 1 ]; then
         log "  window $W interventions exhausted ($NINT/$MAX_INTERVENTIONS), no longer calling $MODEL, policy runs to the end"
         EVENTS=$(python3 -c "
@@ -1650,6 +1897,8 @@ print(json.dumps(l))")
       # RoboDojo is a different robot (tabletop, dual arm, normalised opening, no force sensor); both RoboCasa
       # criteria addenda are wrong there line by line -- MECH is about microwave doors and stove knobs. Split by family first;
       # cosmos / pi05 still take the original case, byte for byte unchanged.
+      # RoboDojo keeps its own copy of the judge brief (hand back first, then repair completely), so RoboCasa/RoboTwin are untouched.
+      JUDGE_BRIEF=JUDGE_BRIEF_V7.md; [ "$FAMILY" = robodojo ] && JUDGE_BRIEF=JUDGE_BRIEF_V7_RD.md
       if [ "$FAMILY" = robodojo ]; then BRIEF_TASK=BRIEF_RD.md
       elif [ "$FAMILY" = robotwin ]; then BRIEF_TASK=BRIEF_RT.md
       else
@@ -1665,7 +1914,7 @@ print(json.dumps(l))")
              /<!--NO-REWIND-->/{skip=(rw==1); next} /<!--\/NO-REWIND-->/{skip=0; next}
              /<!--REWIND-->/{skip=(rw!=1); next} /<!--\/REWIND-->/{skip=0; next}
              !skip {print}' \
-            "$P/recovery_explore/JUDGE_BRIEF_V7.md"
+            "$P/recovery_explore/$JUDGE_BRIEF"
         [ "${RELAX:-0}" = 1 ] && cat << 'RELAXEOF'
 
 OVERRIDE FOR THIS RUN (it replaces the matching lines above wherever they differ):
@@ -1714,8 +1963,7 @@ $TEL
 
 $MEM
 
-Read the numbers above before you look at the image. Keep the bar high: most
-windows should be ok.
+Read the numbers above before you look at the image. $BAR_LINE
 $IV_BLOCK
 
 $PLAN_SPEC
@@ -1767,7 +2015,62 @@ PEOF
           echo "which mat), whether one hand or both must act on the same object, and in what order things happen."; } >> "$CD/p_w$W.txt"
       fi
     fi
-    QWEN_TURN_THINK=0 claude_turn "$CD/p_w$W.txt" "$CD/judge_w$W.json" $JUDGE_DEADLINE "$MONT" "Read"
+    JMONT="$MONT"
+    # rd7: numbered object marks from the head camera's depth on the newest primary frame + their list in the prompt
+    if [ "$FAMILY" = robodojo ] && [ "${RD_MARKS:-0}" = 1 ] && [ -n "$MONT" ]; then
+      _mk=$(python3 $P/recovery_explore/cli/rd_marks.py --endpoint "http://$SIM_HOST:$PORT" --montage "$MONT" \
+            --out "$CD/w$W/marks_montage.png" --text "$CD/w$W/marks.txt" 2>>$OUT/lane$LANE/driver.log | tail -1)
+      if [ -n "$_mk" ] && [ -f "$_mk" ] && [ -s "$CD/w$W/marks.txt" ]; then JMONT=$_mk; { echo; cat "$CD/w$W/marks.txt"; } >> $CD/p_w$W.txt; fi
+    fi
+    if [ -n "${RD_TASK_LESSONS:-}" ] && python3 -c "import json,sys; sys.exit(0 if json.load(open('$RD_TASK_LESSONS')).get('$TASK') else 1)" 2>/dev/null; then
+      cat >> $CD/p_w$W.txt << 'LESSON'
+
+LESSON FOR THIS TASK (from earlier runs on other layouts of the same task): the policy finishes this
+task by itself in many episodes, often after pauses, a missed grasp or a re-approach, and interventions
+here mostly turned a would-be success into a failure. Intervene only when the episode is clearly lost
+(an object knocked out of reach or onto the floor, a hand stuck in the same place for many windows, too
+few steps left for the policy to finish), never for a pause, a slow approach or one or two missed grasps.
+LESSON
+    fi
+    if [ "${ESC_ACTIVE:-0}" = 1 ] && [ -s "$CD/w$W/marks_montage.png.newest" ]; then
+      # the policy did not move this window, so the window montage is old: show the three current pictures instead
+      _nm=$(python3 - "$CD/w$W/marks_montage.png.newest" "$CD/w$W/now_montage.png" << 'PYNM' 2>/dev/null
+import json, sys
+from PIL import Image
+ps = json.load(open(sys.argv[1])); ims = [Image.open(p).convert("RGB").resize((512, 512)) for p in ps]
+out = Image.new("RGB", (512 * len(ims), 512))
+for i, im in enumerate(ims): out.paste(im, (512 * i, 0))
+out.save(sys.argv[2]); print(sys.argv[2])
+PYNM
+)
+      [ -n "$_nm" ] && [ -f "$_nm" ] && JMONT="$_nm"
+    fi
+    if [ "${ESC_ACTIVE:-0}" = 1 ]; then
+      cat >> $CD/p_w$W.txt << ESCSTEP
+
+YOU ARE IN CONTROL NOW (escalated takeover, window $((ESC_N+1)) of at most ${RD_ESCALATE_MAX_WINDOWS:-6}).
+Why: after your intervention at window ${IV_LAST_W:-?} the policy got its turn and the step still failed
+(your words: ${ESC_WHY:-not recorded}). So the policy is paused and has not moved since your last plan. The
+attached image is the CURRENT scene, three pictures side by side: head camera (yellow numbered object marks),
+left wrist, right wrist. STAGE 2: complete the WHOLE step yourself with ops that finish it (pick_place to the
+target, place, push to the target, press), checking each result in the next pictures. Do not grasp and hand
+back half-done, and do not end a plan with a hand-back while in this mode. When the step is done and verified
+(the object is where that step wants it), answer "ok": the policy then resumes from there. If the same op
+fails twice, switch method once (stage 3); if that fails too, answer "ok" to hand the step back for good.
+Answer "giveup" only if nothing left can be done with your tools.
+ESCSTEP
+    elif [ "${RD_ESCALATE:-0}" = 1 ] && [ -n "${IV_LAST_W:-}" ]; then
+      cat >> $CD/p_w$W.txt << 'ESCASK'
+
+Add one more field to your json: "expect_held": "yes" | "no" | "unclear" -- did the expectation you stated
+for your last intervention hold, now that the policy has had its turn? Say "no" only when you can point at the
+failure in these pictures (the object back at its source, the same miss repeated, nothing changed). A "no"
+hands control to you (stage 2): from the next window the policy is paused and you complete that whole step
+yourself with ops that finish it.
+ESCASK
+    fi
+    [ "${RD_STAGED:-0}" = 1 ] && [ "$FAMILY" = robodojo ] && python3 "$P/recovery_explore/rd_ledger.py" "$CD" >> "$CD/p_w$W.txt" 2>/dev/null
+    QWEN_TURN_THINK=0 claude_turn "$CD/p_w$W.txt" "$CD/judge_w$W.json" $JUDGE_DEADLINE "$JMONT" "Read"
     if [ "$ASYNC" != 0 ] && [ -f "$CD/async/success" ]; then
       TS=True; log "  window $W policy finished the task in the background, cancelling in-flight calls, episode over"; break
     fi
@@ -1786,11 +2089,30 @@ PY2
       [ -s "$CD/task_plan.json" ] && log "  window $W task parse: $(tr -d '\n' < "$CD/task_plan.json" | cut -c1-160)"
     fi
     [ "$ASYNC" != 0 ] || $H judge-unlock --control-token "$JTOK" >/dev/null 2>&1
-    JUDGED=$((JUDGED+1))
+    JUDGED=$((JUDGED+1)); LAST_GPT_W=$W
     JJ=$(extract_json "$CD/judge_w$W.json")
     echo "$JJ" > "$CD/verdict_w$W.json"
     V=$(jfield "$JJ" verdict); V=${V:-ok}
     case "$V" in ok|intervene|giveup) ;; *) log "  window $W invalid verdict ($V), treating as ok"; V=ok ;; esac
+    if [ "${RD_ESCALATE:-0}" = 1 ]; then
+      _held=$(jfield "$JJ" expect_held | tr 'A-Z' 'a-z')
+      if [ "${ESC_ACTIVE:-0}" = 1 ]; then
+        ESC_N=$((ESC_N+1))
+        if [ "$V" != intervene ]; then
+          ESC_ACTIVE=0; log "  window $W escalation ends: judge answered $V after $ESC_N window(s), policy resumes"
+          echo "{\"w\":$W,\"event\":\"end\",\"verdict\":\"$V\",\"windows\":$ESC_N}" >> "$CD/escalation.jsonl"
+        elif [ "$ESC_N" -ge "${RD_ESCALATE_MAX_WINDOWS:-6}" ]; then
+          ESC_ACTIVE=0; log "  window $W escalation cap (${RD_ESCALATE_MAX_WINDOWS:-6} windows) reached: this plan runs, then the policy resumes"
+          echo "{\"w\":$W,\"event\":\"cap\",\"windows\":$ESC_N}" >> "$CD/escalation.jsonl"
+        fi
+      elif [ -n "${IV_LAST_W:-}" ] && [ "$_held" = no ] && [ "$GAVEUP" = 0 ] && [ "$W" -gt "${IV_LAST_W:-0}" ] \
+           && [ "${NESC:-0}" -lt "${RD_ESCALATE_MAX_EPISODE:-2}" ]; then
+        ESC_ACTIVE=1; ESC_N=0; NESC=$((NESC+1))
+        ESC_WHY=$(jfield "$JJ" diagnosis | tr '\n' ' ' | cut -c1-500)
+        log "  window $W escalation starts ($NESC): expectation from window $IV_LAST_W failed after the hand-back -> judge keeps control from the next window"
+        echo "{\"w\":$W,\"event\":\"start\",\"from_iv\":${IV_LAST_W:-0},\"verdict\":\"$V\"}" >> "$CD/escalation.jsonl"
+      fi
+    fi
     if [ "$V" = "giveup" ]; then GAVEUP=1; log "  window $W verdict giveup -> no further interventions this episode"; V=ok; fi
     USED=0; ATT=0; RSETS=0; RES=""; NPLAN=0; RETREATED=0
     if [ "$MONITOR" = 1 ]; then
@@ -1804,7 +2126,8 @@ print(json.dumps(l))")
     fi
     # Per human review: once the judge says giveup, no more interventions this episode; the policy runs to the end.
     # In round three one episode judged intervene ten times but acted once; the other nine were blocked by the cap and idled, wasting money.
-    if [ "$V" = "intervene" ] && [ "${VERIFY_PENDING:-0}" = 1 ]; then
+    if [ "$V" = "intervene" ] && [ "${VERIFY_PENDING:-0}" = 1 ] && [ "${ESC_ACTIVE:-0}" = 0 ] \
+       && { [ "${RD_VERIFY_ACT:-0}" != 1 ] || [ "$(jfield "$JJ" expect_held | tr 'A-Z' 'a-z')" != no ]; }; then
       log "  window $W verification window: intervened in the previous window, observe only (judge wanted to intervene, blocked)"
       NVERIFY=$((NVERIFY+1)); V=ok
     fi
@@ -1819,7 +2142,7 @@ print(json.dumps(l))")
     # were taken over at the first miss, ~13% into the episode). While the working hand has missed
     # only once, wait MISS_GRACE windows after that miss; a second miss, or still failing after the
     # grace, lets the intervention through.
-    if [ "$V" = "intervene" ] && [ "${MISS_GRACE:-2}" -gt 0 ] && [ "$NGW" = 1 ] && [ $((W - MISS_W)) -lt "${MISS_GRACE:-2}" ] 2>/dev/null; then
+    if [ "$V" = "intervene" ] && [ "${ESC_ACTIVE:-0}" = 0 ] && [ "${MISS_GRACE:-2}" -gt 0 ] && [ "$NGW" = 1 ] && [ $((W - MISS_W)) -lt "${MISS_GRACE:-2}" ] 2>/dev/null; then
       log "  window $W verdict intervene, but the working hand has missed only once (window $MISS_W) -> letting the policy retry first (grace ${MISS_GRACE:-2} windows)"
       NEARLY=$((NEARLY+1)); V=ok
     fi
@@ -1847,8 +2170,8 @@ print(int(100 * ct / mx) if mx > 0 else 0)" 2>/dev/null)
         NEARLY=$((NEARLY+1)); V=ok
       fi
     fi
-    if [ "$V" = "intervene" ] && [ "$GAVEUP" = "0" ] && [ "$NINT" -lt "$MAX_INTERVENTIONS" ]; then
-      NINT=$((NINT+1)); IN_IV=1
+    if [ "$V" = "intervene" ] && [ "$GAVEUP" = "0" ] && { [ "$NINT" -lt "$MAX_INTERVENTIONS" ] || [ "${ESC_ACTIVE:-0}" = 1 ]; }; then
+      if [ "${ESC_ACTIVE:-0}" = 1 ] && [ "${ESC_N:-0}" -gt 0 ]; then ESC_WINS=$((ESC_WINS+1)); else NINT=$((NINT+1)); fi; IN_IV=1
       STALE=""
       if [ "$ASYNC" != 0 ]; then
         # The judge decided on window $W, but the policy kept going. Stop it at the end of the window it is
@@ -1901,6 +2224,9 @@ PYA
         MEMI=$(python3 $P/recovery_explore/cli/memory_select.py --kind mech --instruction "$INSTR" --situation "repairing a missed grasp, closed on nothing, which arm, left right both hands, handover, lift together, pixel aim, grasp yourself, hand back, rewind, change something, servo stalled, clipped, give up" --limit 8 --prim-slots 3 2>/dev/null)
         [ "${RT_MEMORY:-1}" = 0 ] && MEMI=""
       fi
+      # rdv7 (RD_FIX_FEEDBACK): the RoboCasa lesson bank (faucet, knob, microwave) was pasted into every RoboDojo
+      # repair turn; the window prompt already drops it for RoboDojo (MEM=""), the repair loop did not.
+      [ "$FAMILY" = robodojo ] && [ "${RD_FIX_FEEDBACK:-0}" = 1 ] && MEMI=""
       # The pose at takeover = this intervention's "re-stage anchor". While the policy advances, every chunk records an entry
       # in _waypoints; execute_plan during an intervention does not, so this point is always
       # in visited_points -- a move_to back here hits the 8 cm relaxation and may travel 60 cm in one step
@@ -1987,6 +2313,17 @@ except Exception: print('')" "$PLAN" 2>/dev/null)
         if [ -z "$PLAN" ] || [ "$PLAN" = "[]" ]; then
           log "  window $W attempt $ATT has no executable plan, closing as giveup"; RES=${RES:-giveup}; break
         fi
+        PLAN_REST=""
+        if [ "${RD_STEPWISE:-0}" = 1 ] && [ "$FAMILY" = robodojo ]; then
+          # rdv7: run only the first step; the judge sees its result and a fresh picture before choosing the next.
+          SPLIT=$(python3 -c "import json,sys
+try: p=json.loads(sys.argv[1])
+except Exception: p=[]
+p=p if isinstance(p,list) else []
+print(json.dumps(p[:1])); print(json.dumps(p[1:]))" "$PLAN" 2>/dev/null)
+          PLAN=$(printf '%s\n' "$SPLIT" | sed -n 1p); PLAN_REST=$(printf '%s\n' "$SPLIT" | sed -n 2p)
+          [ "$PLAN_REST" = "[]" ] && PLAN_REST=""
+        fi
         PF="$CD/plan_w${W}_a${ATT}_r$R.json"; printf '%s' "$PLAN" > "$PF"
         FD="$CD/act$W/a${ATT}r$R"
         EX=$($REX exec-plan --plan-file "$PF" --frames-dir "$FD" 2>&1 | tail -1)
@@ -2066,7 +2403,11 @@ print(1 if e.get('op')=='retreat' and e.get('servo_ok') is not False and not e.g
 NOT back: it is wherever your last contact left it, so look at it again in the fresh
 image before planning -- re-derive any target from what you see now, never from the
 numbers you used before. If the policy had been handed back in this intervention,
-you have just undone its re-approach as well; do not make that a habit. If you have a materially different approach -- a different
+you have just undone its re-approach as well. Send a materially different approach -- a different
+line in, a lower grasp, the other arm, pi0_pick, a push -- as continue. Answer fixed with an
+empty plan (handing the policy back its pose) when the step is done, or when this method
+failed twice and no materially different one is left."
+          [ "$FAMILY" = robodojo ] || NEXTHINT="${NEXTHINT%%you have just undone its re-approach as well. Send*}you have just undone its re-approach as well; do not make that a habit. If you have a materially different approach -- a different
 line in, a lower grasp, letting the policy make the close -- send it as continue.
 Otherwise answer fixed with an empty plan: that hands the policy back its pose,
 and an intervention ended this way is not counted against your allowance."
@@ -2079,7 +2420,9 @@ try: d=json.loads(sys.argv[1])
 except Exception: d={}
 img=d.get('image')
 print(f\"{img}  (one picture, three cameras side by side: {d.get('image_layout','primary | secondary | wrist')})\" if img else '(no images)')" "$EX")
-        if [ "$FAMILY" = robotwin ]; then
+        if [ "$FAMILY" = robotwin ] || { [ "$FAMILY" = robodojo ] && [ "${RD_FIX_FEEDBACK:-0}" = 1 ]; }; then
+        # rdv7: RoboDojo went through the RoboCasa branch below and its judge read "eef None; moved None cm;
+        # width None mm; force None N" after every step -- never the outcome. It now shares this formatter.
         # robotwin: the shared formatter reads RoboCasa keys (eef_after, moved_cm,
         # width_mm, force) that this robot does not report -- it printed "None" for every
         # step, so the judge never saw whether a move arrived. Report what the mixin returns.
@@ -2096,6 +2439,9 @@ for e in d.get('executed') or []:
     for k in ('target','dxyz','dz','drot','state'):
         if e.get(k) is not None: bits.append(f'{k}={e[k]}')
     if e.get('aim'): a_=e['aim']; bits.append(f\"AIM {str(a_.get('result')).upper()}: target {a_.get('target_xyz')}, chosen {a_.get('chosen')} ({a_.get('how')}), {a_.get('blobs')} things seen, yaw {a_.get('yaw_deg')} deg, ended {a_.get('final_dist_m')} m from the target, width after close {a_.get('width_after_close_mm')} mm, after lift {a_.get('width_after_lift_mm')} mm\")
+    if e.get('outcome') not in (None, ''): bits.append('OUTCOME ' + str(e.get('outcome')).upper())
+    for k_ in ('detail','verify','descent_stop','descent_short_m','push_stop','object_moved_m','moved_along_push_m','stopped_above_surface_m','support_points_before','support_points_after','dest_points_before','dest_points_after','released_above_target_m','snapped_from_robot_m','snapped_to_nearest_object_m','kept_holding','fingers','object_width_m','opening_after_lift','opening_after','stage','chunks_run'):
+        if e.get(k_) not in (None, '', []): bits.append(k_ + '=' + str(e.get(k_)))
     if e.get('error'): bits.append('ERROR ' + str(e['error']))
     elif op=='policy':
         bits.append(f\"{e.get('chunks')} chunk(s) handed back{' with the fingers held shut' if e.get('hold') else ''}, policy chunks left this intervention {e.get('policy_chunks_left')}\")
@@ -2104,21 +2450,21 @@ for e in d.get('executed') or []:
     else:
         eef=e.get('eef')
         eef=({k: r(v) for k,v in eef.items()} if isinstance(eef,dict) else r(eef))
-        bits.append(f\"asked {e.get('requested_dist_m')} m, travelled {e.get('travelled_m')} m, ended {e.get('final_dist_m')} m from the target\")
+        if e.get('requested_dist_m') is not None: bits.append(f\"asked {e.get('requested_dist_m')} m, travelled {e.get('travelled_m')} m, ended {e.get('final_dist_m')} m from the target\")
         if (e.get('segments') or 1)>1: bits.append(f\"{e.get('segments_done')}/{e.get('segments')} segments\")
-        bits.append(f'fingertips now {eef}')
+        if eef is not None: bits.append(f'fingertips now {eef}')
         if e.get('hand_offset_drift_m') is not None and op in ('move_both','lift_both'): bits.append(f\"hand-to-hand offset changed {e['hand_offset_drift_m']} m\")
-        if e.get('ok') is False: bits.append(f\"DID NOT REACH TARGET ({e.get('servo_stop')}\" + (f\", {e['failed_arm']} arm could not be planned\" if e.get('failed_arm') else '') + ')')
+        if e.get('ok') is False and e.get('servo_stop'): bits.append(f\"DID NOT REACH TARGET ({e.get('servo_stop')}\" + (f\", {e['failed_arm']} arm could not be planned\" if e.get('failed_arm') else '') + ')')
         if e.get('clipped'): bits.append(f\"CLIPPED: asked {e.get('asked_dist_m')} m, longest allowed {e.get('clipped_to_m')} m\")
         if e.get('overshoot'): bits.append('OVERSHOOT')
         if e.get('task_success_latched'): bits.append('TASK SUCCESS REGISTERED')
     print('  ' + '; '.join(str(b) for b in bits))
-st=(d.get('state') or {}); op_=st.get('opening') or {}; cmd_=st.get('gripper') or {}
+st=(d.get('state') or {}); rd_=('gripper_cmd' in st); op_=(st.get('gripper') if rd_ else st.get('opening')) or {}; cmd_=(st.get('gripper_cmd') if rd_ else st.get('gripper')) or {}
 def _hand(side):
     o, c = op_.get(side), cmd_.get(side)
     if o is None: return f'{side} ?'
     o = float(o)
-    if o <= 0.05 and (c is None or float(c) <= 0.5): return f'{side} {o:.2f} = SHUT ON NOTHING (empty hand)'
+    if o <= (0.20 if rd_ else 0.05) and (c is None or float(c) <= 0.5): return f'{side} {o:.2f} = SHUT ON NOTHING (empty hand)'
     if o >= 0.85: return f'{side} {o:.2f} = open'
     return f'{side} {o:.2f} = partly closed (holding something only if it rose with the hand)'
 print(f\"  now: fingers {_hand('left')}; {_hand('right')}; resets left {d.get('resets_left')}; policy steps left {st.get('policy_steps_left')} of {st.get('policy_steps_max')} (hand-backs come out of these)\")" "$EX")
@@ -2146,8 +2492,18 @@ for e in d.get('executed') or []:
 st=(d.get('state') or {})
 print(f\"  now: eef {st.get('eef_pos')}, aperture {round(1000*float(st.get('gripper_width') or 0),1)} mm, resets left {st.get('resets_left')}, policy steps left {st.get('policy_steps_left')} of {st.get('policy_steps_max')} (your own steps come out of these too)\")" "$EX")
         fi
-        if [ "$R" -ge "$PLAN_ROUNDS" ] || [ "${NLEFT:-0}" = "0" ] && [ "$SR" = "plan_complete" ]; then TAIL_HINT="This was your last segment; finish now."; else TAIL_HINT="You may send one more segment if the repair is not finished."; fi
-        if [ "$FAMILY" = robotwin ]; then
+        if [ "${RD_STEPWISE:-0}" = 1 ] && [ "$FAMILY" = robodojo ]; then
+          if [ "$R" -ge "$PLAN_ROUNDS" ]; then TAIL_HINT="That was your last step turn in this intervention; finish now (fixed or giveup, empty plan)."
+          else TAIL_HINT="STEPWISE MODE: only the FIRST step of each plan you send is executed; then you see its outcome and a
+fresh picture, as now. Steps you had planned after it (NOT executed): ${PLAN_REST:-none}.
+Decide from what you see: send the next step as continue (only its first step runs), or answer fixed to hand
+back to the policy. $((PLAN_ROUNDS - R)) step turn(s) left in this intervention."; fi
+        elif [ "$R" -ge "$PLAN_ROUNDS" ] || [ "${NLEFT:-0}" = "0" ] && [ "$SR" = "plan_complete" ]; then TAIL_HINT="This was your last segment; finish now."; else TAIL_HINT="You may send one more segment if the repair is not finished."; fi
+        if [ "$FAMILY" = robodojo ] && [ "${RD_FIX_FEEDBACK:-0}" = 1 ]; then
+          APERTURE_NOTE="The opening (normalised: 1 open, about 0.19 where the fingers meet) tells you the fingers shut
+on nothing when it is at or below 0.20. It cannot tell holding from open, so confirm a grasp by the object
+leaving its support in the pictures. Each OUTCOME above is measured from the arm and the depth cameras."
+        elif [ "$FAMILY" = robotwin ]; then
           APERTURE_NOTE="The opening (0 shut .. 1 open) is the only thing that tells you the fingers shut on
 nothing (at or below 0.05). It cannot tell holding from open, so confirm a grasp by
 whether the object came up with the hand in the images, not by the number alone."
@@ -2326,16 +2682,18 @@ cd,w=sys.argv[1],sys.argv[2]
 ops=[]
 for f in sorted(glob.glob(f"{cd}/plan_w{w}_a*_r*.json")):
     try:
-        pl=json.load(open(f)); st=pl.get("plan") or pl.get("steps") or []
+        pl=json.load(open(f)); st=pl if isinstance(pl,list) else (pl.get("plan") or pl.get("steps") or [])
         ops+= [s.get("op","?") if isinstance(s,dict) else str(s) for s in st]
     except Exception: pass
-stops=[]
+stops=[]; ops_out=[]
 for f in sorted(glob.glob(f"{cd}/exec_w{w}_a*_r*.json")):
     try:
         j=json.load(open(f)); r=j.get("stop_reason") or j.get("status")
         if r: stops.append(str(r))
+        outs=[f"{e.get('op')}->{e.get('outcome') or ('error' if e.get('error') else 'done')}" for e in (j.get("executed") or [])]
+        if outs: ops_out.append(", ".join(outs))
     except Exception: pass
-print(("steps: "+" + ".join(ops[:8]) if ops else "steps: (none recorded)") + ("; how they ended: "+", ".join(stops[:6]) if stops else ""))
+print(("steps: "+" + ".join(ops[:8]) if ops else "steps: (none recorded)") + ("; outcomes: "+" | ".join(ops_out[:8]) if ops_out else "") + ("; how they ended: "+", ".join(stops[:6]) if stops else ""))
 PYM
 )
       VERIFY_PENDING=1
