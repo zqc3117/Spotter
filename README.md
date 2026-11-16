@@ -31,7 +31,7 @@ so the whole framework works with a **locally served, open-source Qwen and no pr
 
 ## 📰 What's New
 
-- [2026/11] 🔥 Spotter on **RoboDojo** with VPP2 and GPT-6.1-sol: 540 episodes, 43.34 vs 40.35 for VPP2 alone (Avg. w/o Open 51.49 vs 48.90), per-episode results and a one-command launcher (`robodojo_eval.sh`). Not the official leaderboard protocol (3× step budget). See [RoboDojo](#robodojo).
+- [2026/11] 🔥 Spotter now supports **RoboDojo**, with VPP2 as the embodied policy and GPT-6.1-sol as the judge. On 540 episodes (54 tasks × 10) it scores 43.34 against 40.35 for VPP2 alone (Avg. w/o Open 51.49 vs 48.90); run with our own harness at 3× the step budget, not the official leaderboard protocol. Launcher: `robodojo_eval.sh`; per-episode results: [`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv).
 - [2026/10] 🔥 RoboCasa: we release the code version that was evaluated on the 1,200-episode test set, with a render guard for black / noisy frames and a wrist-depth `aim` step for grasping. See [RoboCasa](#robocasa).
 - [2026/10] 🔥 Spotter supports **RoboTwin 2.0** with π0.5: one-command evaluation (`bash robotwin_eval.sh`), a 1-shot example bank ([fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)), and full logs on ModelScope with every episode's frames, judge prompts and replies ([150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150): policy alone, Spotter and a VLM-led agent, each with Qwen and GPT; [50 tasks × 10 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)). The real-robot demo (Franka Research 3) and the [project page](https://zqc3117.github.io/Spotter/) are online. See [RoboTwin 2.0](#robotwin-20).
 - [2026/09] 🎉 The paper is on [arXiv](https://arxiv.org/abs/2609.36808), and the code is released with the RoboCasa example bank ([fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)).
@@ -96,7 +96,7 @@ over the policy alone and takes about **70% less time** than a VLM-led agent usi
 - [Environment Setup](#-environment-setup)
 - [Model Preparation](#-model-preparation)
 - [Simulator Assets and Episode Sets](#-simulator-assets-and-episode-sets)
-- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20) · [RoboDojo](#robodojo)
+- [Evaluation with Released Checkpoints](#-evaluation-with-released-checkpoints): [RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
 - [Reproducing the Paper](#-reproducing-the-paper)
 - [Building the Lesson Library and Example Bank](#-building-the-lesson-library-and-example-bank)
 - [Plugging In Your Own Embodied Model](#-plugging-in-your-own-embodied-model)
@@ -371,51 +371,6 @@ turn and calls the policy as a tool; its code is not part of this release.
 
 The complete records of all five arms, with every episode's frames, prompts and replies, are on ModelScope:
 [150 episodes](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150).
-
-### RoboDojo
-
-Spotter on [RoboDojo](https://robodojo-benchmark.com/) with **VPP2** as the embodied policy, Qwen3.8-27B as the
-screener and **GPT-6.1-sol** (reasoning effort xhigh, through the codex CLI) as the judge. The released set
-`rd_test540` has 54 tasks × 10 episodes (seed 0, episodes 0–9). Every episode was run with both arms: the policy
-alone (control) and the policy with Spotter, on the same scene and step budget.
-
-| RoboDojo (540 episodes) | Control (VPP2) | Spotter (VPP2 + GPT-6.1-sol) |
-|---|---|---|
-| All 54 tasks, score | 40.35 | **43.34** (+2.99, se 1.33) |
-| All 54 tasks, successes | 179 (33.1%) | **197 (36.5%)** |
-| Generalization (24 tasks) | 43.23 / 35.8% | 43.81 / 37.5% |
-| Precision (8) | 42.00 / 35.0% | 46.00 / 40.0% |
-| Long-Horizon (8) | 60.12 / 41.2% | 62.50 / 42.5% |
-| Memory (6) | 50.25 / 50.0% | 53.67 / 53.3% |
-| Open (8) | 2.87 / 2.5% | 12.37 / 11.2% |
-| Avg. (w/o Open) | 48.90 / 40.52% | **51.49 / 43.33%** |
-
-Score is RoboDojo's progress score (`episode_score` × 100, mean over episodes), "/ x%" the success rate; Avg. (w/o
-Open) is the equal-weight mean of the four dimensions, as on the Agent leaderboard. Spotter intervened in 319 of the
-540 episodes, and 29 of those succeeded. A second, control-only run of the first 270 episodes scored 40.57 against
-40.98 for the paired control on the same episodes, so the control is reproducible to within half a point. Per-episode
-numbers: [`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv).
-
-> **Not the official leaderboard protocol.** These numbers come from our own harness and are not comparable with the
-> RoboDojo leaderboard: (1) both arms ran with **3× the official step budget** (`SBS=3.0`); (2) the judge's instruction
-> carries per-task acceptance notes paraphrased from [uni-robot-agent](https://github.com/Open-RUA/uni-robot-agent)
-> (`RD_TASK_NOTES=1`, `recovery_explore/rd_task_notes.json`) in addition to the task instruction; (3) the repair tools
-> read the head and wrist depth images (`RD_DEPTH=1`, `RD_MARKS=1`); (4) the simulator is driven by our own service
-> rather than the official evaluation client, with one seed. The judge sees only camera images and proprioception,
-> never simulator state, and nothing is rewound or reset.
-
-**Run.** Start the Qwen screener (`bash spotter.sh judge`) and one VPP2 policy server per port with RoboDojo's
-`bash scripts/robodojo.sh server --policy-dir XPolicyLab/policy/VPP2 ...`, sign in the `codex` CLI, set the RoboDojo
-paths in `env/env.sh`, then start one lane per simulator:
-
-```bash
-bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt \
-  "50:0:23000 51:1:23001 52:2:23002 53:3:23000" both
-```
-
-`robodojo_eval.sh` holds every setting of the released run; `--dry-run` prints the lane commands. With the 3× budget an
-episode took 18.5 min for the control and 52 min with Spotter on average (31 min of it in the judge). For the official
-budget and instruction set `SBS=1.0 RD_TASK_NOTES=0`.
 
 ### Run options
 

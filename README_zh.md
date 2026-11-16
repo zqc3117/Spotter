@@ -30,7 +30,7 @@
 
 ## 📰 最新动态
 
-- [2026/11] 🔥 Spotter 支持 **RoboDojo**（VPP2 + GPT-6.1-sol）：540 集，43.34 对比仅 VPP2 的 40.35（Avg. 不含 Open：51.49 对 48.90），附逐集结果和启动脚本（`robodojo_eval.sh`）。非官方榜单协议（3 倍步数预算）。见 [RoboDojo](#robodojo)。
+- [2026/11] 🔥 Spotter 新增支持 **RoboDojo**：具身策略用 VPP2，判别器用 GPT-6.1-sol。在 540 集（54 个任务 × 10 集）上得分 43.34，仅 VPP2 为 40.35（不含 Open 的平均：51.49 对 48.90）；使用我们自己的评测框架和 3 倍步数预算，非官方榜单协议。启动脚本：`robodojo_eval.sh`；逐集结果：[`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv)。
 - [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
 - [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
 - [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
@@ -90,7 +90,7 @@ Spotter 把串行监督改成并行监督，消除了这个两难。
 - [环境配置](#-环境配置)
 - [模型准备](#-模型准备)
 - [仿真资源与评测集](#-仿真资源与评测集)
-- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20) · [RoboDojo](#robodojo)
+- [用发布的权重评测](#-用发布的权重评测)：[RoboCasa](#robocasa) · [RoboTwin 2.0](#robotwin-20)
 - [复现论文结果](#-复现论文结果)
 - [重建经验库与示例库](#-重建经验库与示例库)
 - [接入你自己的具身模型](#-接入你自己的具身模型)
@@ -359,46 +359,6 @@ bash spotter.sh summary
 
 五个组的完整记录（每集的画面、提示词和回复）都在 ModelScope 上：
 [150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)。
-
-### RoboDojo
-
-在 [RoboDojo](https://robodojo-benchmark.com/) 上，具身策略用 **VPP2**，筛子用 Qwen3.8-27B，判别器用
-**GPT-6.1-sol**（推理强度 xhigh，通过 codex CLI 调用）。发布的评测集 `rd_test540` 为 54 个任务 × 10 集（seed 0，
-第 0–9 集）。每一集都跑两个臂：仅策略（对照）和策略 + Spotter，场景和步数预算相同。
-
-| RoboDojo（540 集） | 对照（VPP2） | Spotter（VPP2 + GPT-6.1-sol） |
-|---|---|---|
-| 全部 54 个任务，得分 | 40.35 | **43.34**（+2.99，se 1.33） |
-| 全部 54 个任务，成功数 | 179（33.1%） | **197（36.5%）** |
-| Generalization（24 个任务） | 43.23 / 35.8% | 43.81 / 37.5% |
-| Precision（8） | 42.00 / 35.0% | 46.00 / 40.0% |
-| Long-Horizon（8） | 60.12 / 41.2% | 62.50 / 42.5% |
-| Memory（6） | 50.25 / 50.0% | 53.67 / 53.3% |
-| Open（8） | 2.87 / 2.5% | 12.37 / 11.2% |
-| Avg.（不含 Open） | 48.90 / 40.52% | **51.49 / 43.33%** |
-
-得分为 RoboDojo 的进度分（`episode_score` × 100，按集平均），"/ x%" 为成功率；Avg.（不含 Open）是四个维度的等权平均，
-与 Agent 榜单的算法一致。Spotter 在 540 集中介入了 319 集，其中成功 29 集。前 270 集另跑了一次仅对照的重复实验，得分
-40.57，同一批集上配对对照为 40.98，对照的可复现性在半分以内。逐集结果见
-[`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv)。
-
-> **不是官方榜单协议。** 这些数字来自我们自己的评测框架，不能与 RoboDojo 榜单直接比较：(1) 两个臂都用了**官方步数预算的
-> 3 倍**（`SBS=3.0`）；(2) 判别器拿到的指令里，除了任务指令，还附有改写自 [uni-robot-agent](https://github.com/Open-RUA/uni-robot-agent)
-> 的逐任务验收说明（`RD_TASK_NOTES=1`，`recovery_explore/rd_task_notes.json`）；(3) 修复工具读取头部和腕部相机的深度图
-> （`RD_DEPTH=1`、`RD_MARKS=1`）；(4) 仿真由我们自己的服务驱动，而非官方评测客户端，只跑了一个 seed。判别器只看相机画面和
-> 本体感知，从不读取仿真状态，也没有任何回档或重置。
-
-**运行。** 先启动 Qwen 筛子（`bash spotter.sh judge`），用 RoboDojo 的
-`bash scripts/robodojo.sh server --policy-dir XPolicyLab/policy/VPP2 ...` 为每个端口启动一个 VPP2 策略服务，登录 `codex`
-CLI，在 `env/env.sh` 里填好 RoboDojo 路径，然后每个仿真开一条 lane：
-
-```bash
-bash robodojo_eval.sh rd540 recovery_explore/episode_sets/rd_test540.txt \
-  "50:0:23000 51:1:23001 52:2:23002 53:3:23000" both
-```
-
-`robodojo_eval.sh` 里写好了发布结果用的全部设置，`--dry-run` 只打印每条 lane 的命令。在 3 倍预算下，对照平均每集 18.5 分钟，
-Spotter 平均 52 分钟（其中判别器约 31 分钟）。如需官方步数预算和官方指令，设 `SBS=1.0 RD_TASK_NOTES=0`。
 
 ### 运行选项
 
