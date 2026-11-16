@@ -30,7 +30,7 @@
 
 ## 📰 最新动态
 
-- [2026/11] 🔥 Spotter 新增支持 **RoboDojo**：具身策略用 VPP2，判别器用 GPT-6.1-sol。在 540 集（54 个任务 × 10 集）上得分 43.34，仅 VPP2 为 40.35（不含 Open 的平均：51.49 对 48.90）；使用我们自己的评测框架和 3 倍步数预算，非官方榜单协议。见 [RoboDojo](#robodojo)。
+- [2026/11] 🔥 Spotter 新增支持 **RoboDojo**：具身策略用 VPP2，判别器用 GPT-6.1-sol。在 540 集（54 个任务 × 10 集）上得分 43.34，仅 VPP2 为 40.35（不含 Open 的平均：51.49 对 48.90），步数预算为官方的 3 倍。见 [RoboDojo](#robodojo)。
 - [2026/10] 🔥 RoboCasa：发布在 1,200 集测试集上实际评测过的代码版本，加入黑帧 / 噪声帧的重渲染保护，以及基于腕部深度图的 `aim` 抓取步骤。见 [RoboCasa](#robocasa)。
 - [2026/10] 🔥 Spotter 支持 **RoboTwin 2.0**（π0.5）：一条命令评测（`bash robotwin_eval.sh`），提供 1-shot 示例库（[fewshot_bank_robotwin.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank_robotwin.tar.gz)），完整日志已上传魔搭（ModelScope），含每一集的画面、判别器提示词和回复（[150 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-150)：仅策略、Spotter、VLM 主导的智能体，各配 Qwen 和 GPT；[50 个任务 × 10 集](https://www.modelscope.ai/datasets/seamoke/spotter-robotwin-50x10)）。真机演示（Franka Research 3）和[项目主页](https://zqc3117.github.io/Spotter/)同步上线。见 [RoboTwin 2.0](#robotwin-20)。
 - [2026/09] 🎉 论文发布在 [arXiv](https://arxiv.org/abs/2609.36808)，代码同步开源，附 RoboCasa 示例库（[fewshot_bank.tar.gz](https://github.com/zqc3117/Spotter/releases/download/v1.0/fewshot_bank.tar.gz)）。
@@ -377,13 +377,14 @@ bash spotter.sh summary
 
 得分（`episode_score` × 100）/ 成功率。Avg.（不含 Open）为四个维度的等权平均，与 RoboDojo Agent 榜单算法一致。Spotter
 介入 319 集，其中成功 29 集。逐集结果见 [`results/robodojo/rdv11_test540_cells.csv`](results/robodojo/rdv11_test540_cells.csv)。
-这批结果使用我们自己的评测框架、官方 3 倍的步数预算，判别器指令附加了逐任务验收说明，修复工具使用深度图，因此不是官方
-榜单协议。
+我们的 VPP2 设置与官方榜单一致：在官方评测设置下单独运行 VPP2（官方步数预算、按官方集数，共 2,100 集），得分 39.20 / 31.92%，
+RoboDojo 榜单上 VPP2 为 39.26 / 32.26%。
 
 **步数预算与每集设置。** 两组步数预算相同：每个任务的官方步数上限（RoboDojo 任务类里的 `step_lim`）× 3，例如
 `general_pickup` 200 → 600 步，`solve_equation` 300 → 900，`push_T_random` 600 → 1800。所有动作都计入预算，包括判别器
 自己执行的修复动作。VPP2 每次输出 24 步的动作块；筛子每个窗口（2 个动作块，48 步）检查一次，筛子报警时调用
-GPT-6.1-sol（另外至少每 3 个窗口调用一次，介入后的 2 个窗口也会调用）。每集最多介入 4 次，不回档、不重置，只跑 1 个 seed。
+GPT-6.1-sol（另外至少每 3 个窗口调用一次，介入后的 2 个窗口也会调用）。每集最多介入 4 次，不回档、不重置，只跑 1 个 seed。判别器的指令附有逐任务验收说明（`recovery_explore/rd_task_notes.json`），
+修复工具使用头部和腕部相机的深度图。
 
 **使用方法。**
 
